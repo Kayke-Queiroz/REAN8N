@@ -1,0 +1,30 @@
+{
+  "name": "n8n-reconstructed",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Reconstrução fiel da interface, design system, canvas e motor de execução do n8n (v1.118.1) via Engenharia Reversa REA",
+  "type": "module",
+  "scripts": {
+    "dev": "vite --port 5173",
+    "server": "tsx server/index.ts",
+    "build": "tsc --noEmit && vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "express": "^4.21.2",
+    "lucide-react": "^0.468.0",
+    "react": "^18.3.1",
+    "react-dom": "^18.3.1"
+  },
+  "devDependencies": {
+    "@types/express": "^5.0.0",
+    "@types/node": "^22.10.2",
+    "@types/react": "^18.3.18",
+    "@types/react-dom": "^18.3.5",
+    "@vitejs/plugin-react": "^4.3.4",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vite": "^6.0.5"
+  }
+}
+
