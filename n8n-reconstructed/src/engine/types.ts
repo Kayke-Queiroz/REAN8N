@@ -213,6 +213,19 @@ export type NodeCategory =
   | 'ai_subnode'
   | 'annotation';
 
+export type NodeShapeVariant =
+  | 'prompt-pill'
+  | 'agent-card'
+  | 'gateway-capsule'
+  | 'skill-hexagon'
+  | 'mcp-shield'
+  | 'output-card'
+  | 'trigger-pill'
+  | 'flow-diamond-card'
+  | 'circle'
+  | 'standard'
+  | 'sticky';
+
 export interface INodeTypeDescription {
   name: string;
   displayName: string;
@@ -222,9 +235,12 @@ export interface INodeTypeDescription {
   version: number;
   icon: string;
   color: string;
+  badgeLabel?: string;
+  shapeVariant?: NodeShapeVariant;
+  isInlineCard?: boolean; // Renders title, badge & subtitle inside the card body
   isTrigger?: boolean;
-  isConfiguration?: boolean; // 80x80 circular AI sub-node
-  isConfigurable?: boolean; // 256x96 wide AI Agent node with bottom ports
+  isConfiguration?: boolean; // Sub-node that connects upwards via diamond ports
+  isConfigurable?: boolean; // Wide AI Agent node with bottom diamond ports
   isSticky?: boolean;
   inputs: INodePortDefinition[];
   outputs: INodePortDefinition[];

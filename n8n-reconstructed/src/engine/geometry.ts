@@ -24,6 +24,7 @@ export function snapToGrid(value: number, grid = GRID_SIZE): number {
 
 /**
  * Direct port of `calculateNodeSize` from `useTelemetry-BxbCYDca.js` L25420-25433
+ * Extended with custom shape dimensions for non-technical AI Agent blocks (Prompt Pill, Gateway Capsule, Skill Hexagon, MCP Shield, Output Card).
  */
 export function getNodeDimensions(node: INode): { width: number; height: number } {
   const desc = getNodeTypeDescription(node.type);
@@ -33,6 +34,25 @@ export function getNodeDimensions(node: INode): { width: number; height: number 
       width: Number(node.parameters.width) || 280,
       height: Number(node.parameters.height) || 160,
     };
+  }
+
+  switch (desc.shapeVariant) {
+    case 'prompt-pill':
+      return { width: 208, height: 80 };
+    case 'agent-card':
+      return { width: 256, height: 96 };
+    case 'gateway-capsule':
+      return { width: 176, height: 72 };
+    case 'skill-hexagon':
+      return { width: 176, height: 76 };
+    case 'mcp-shield':
+      return { width: 176, height: 76 };
+    case 'output-card':
+      return { width: 208, height: 80 };
+    case 'circle':
+      return { width: 96, height: 96 };
+    default:
+      break;
   }
 
   const mainInputCount = desc.inputs.filter((i) => i.type === 'main').length;
@@ -328,9 +348,9 @@ export function tidyUpWorkflowNodes(
   }
 
   const updatedPositions = new Map<string, [number, number]>();
-  const startX = 160;
-  const startY = 240;
-  const colSpacing = 256;
+  const startX = 144;
+  const startY = 208;
+  const colSpacing = 320;
   const rowSpacing = 176;
 
   for (const [colIdx, colNodes] of columns.entries()) {
@@ -343,7 +363,11 @@ export function tidyUpWorkflowNodes(
     });
   }
 
-  // Position AI Configuration sub-nodes directly below their parent AI Agent
+  // Group AI Configuration sub-nodes by their parent AI Agent so multiple Skills/MCPs never overlap
+  const subNodesByParent = new Map<
+    string,
+    Array<{ name: string; connType: string }>
+  >();
   for (const [sourceName, byType] of Object.entries(connections)) {
     const subNode = nodes.find((n) => n.name === sourceName);
     if (!subNode || !getNodeTypeDescription(subNode.type).isConfiguration) continue;
@@ -352,19 +376,27 @@ export function tidyUpWorkflowNodes(
       if (connType === 'main') continue;
       const targetName = branches?.[0]?.[0]?.node;
       if (targetName && updatedPositions.has(targetName)) {
-        const [parentX, parentY] = updatedPositions.get(targetName)!;
-        const offsetSlot =
-          connType === 'ai_languageModel'
-            ? -96
-            : connType === 'ai_memory'
-              ? 0
-              : 96;
-        updatedPositions.set(sourceName, [
-          snapToGrid(parentX + 80 + offsetSlot),
-          snapToGrid(parentY + 176),
-        ]);
+        const list = subNodesByParent.get(targetName) ?? [];
+        list.push({ name: sourceName, connType });
+        subNodesByParent.set(targetName, list);
       }
     }
+  }
+
+  for (const [parentName, children] of subNodesByParent.entries()) {
+    const [parentX, parentY] = updatedPositions.get(parentName)!;
+    const orderWeight = (t: string) =>
+      t === 'ai_languageModel' ? 0 : t === 'ai_memory' ? 1 : 2;
+    children.sort((a, b) => orderWeight(a.connType) - orderWeight(b.connType));
+
+    const subSpacing = 208;
+    children.forEach((child, idx) => {
+      const xOffset = (idx - (children.length - 1) / 2) * subSpacing;
+      updatedPositions.set(child.name, [
+        snapToGrid(parentX + 40 + xOffset),
+        snapToGrid(parentY + 192),
+      ]);
+    });
   }
 
   return nodes.map((node) => {

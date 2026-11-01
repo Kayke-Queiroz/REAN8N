@@ -296,7 +296,7 @@ select {
 .n8n-canvas-node {
   position: absolute;
   user-select: none;
-  transition: box-shadow 0.12s ease, border-color 0.12s ease, background-color 0.12s ease;
+  transition: box-shadow 0.14s ease, border-color 0.14s ease, background-color 0.14s ease, transform 0.12s ease;
   background: var(--node--color--background);
   border: 2px solid var(--node--border--color);
   border-radius: var(--radius--lg);
@@ -304,17 +304,20 @@ select {
   align-items: center;
   justify-content: center;
   cursor: grab;
+  box-shadow: 0 3px 10px hsla(215, 28%, 15%, 0.06);
 }
 
 .n8n-canvas-node:active {
   cursor: grabbing;
 }
 
-.n8n-canvas-node.is-trigger {
+.n8n-canvas-node.is-trigger,
+.n8n-canvas-node.shape-trigger-pill {
   border-radius: var(--trigger-node--border-radius) var(--radius--lg) var(--radius--lg) var(--trigger-node--border-radius);
 }
 
-.n8n-canvas-node.is-configuration {
+.n8n-canvas-node.is-configuration,
+.n8n-canvas-node.shape-circle {
   border-radius: 999px;
   background: hsl(
     var(--node-type--supplemental--color--h),
@@ -322,6 +325,64 @@ select {
     var(--node-type--supplemental--color--l)
   );
   border-color: var(--node--border--color);
+}
+
+/* ==========================================================================
+   Distinctive Block Shapes & Color Accents for Non-Technical AI Builder
+   (While keeping n8n's exact Main & Diamond Connection Ports)
+   ========================================================================== */
+
+/* 1. Prompt / User Input Pill (Asymmetric Left Pill, Indigo Accent) */
+.n8n-canvas-node.shape-prompt-pill {
+  border-radius: 40px 14px 14px 40px;
+  border: 2px solid #6366f1;
+  background: linear-gradient(135deg, hsla(239, 84%, 67%, 0.10) 0%, var(--node--color--background) 65%);
+  box-shadow: 0 4px 14px hsla(239, 84%, 60%, 0.12);
+}
+
+/* 2. AI Agent Brain Card (Flagship Rounded Card with Top Accent Stripe) */
+.n8n-canvas-node.shape-agent-card {
+  border-radius: 16px;
+  border: 2px solid #ff6d5a;
+  background: linear-gradient(160deg, hsla(7, 100%, 68%, 0.11) 0%, var(--node--color--background) 60%);
+  box-shadow: 0 6px 18px hsla(7, 90%, 58%, 0.14);
+}
+
+/* 3. LLM Model Gateway Capsule (Full Stadium Capsule, Emerald Accent) */
+.n8n-canvas-node.shape-gateway-capsule {
+  border-radius: 999px;
+  border: 2px solid #10b981;
+  background: linear-gradient(135deg, hsla(160, 84%, 39%, 0.12) 0%, var(--node--color--background) 70%);
+  box-shadow: 0 4px 14px hsla(160, 84%, 39%, 0.14);
+}
+
+/* 4. Skill Block (Asymmetric Leaf / Beveled Corners, Amber Gold Accent) */
+.n8n-canvas-node.shape-skill-hexagon {
+  border-radius: 22px 6px 22px 6px;
+  border: 2px solid #f59e0b;
+  background: linear-gradient(135deg, hsla(38, 92%, 50%, 0.13) 0%, var(--node--color--background) 70%);
+  box-shadow: 0 4px 14px hsla(38, 92%, 50%, 0.14);
+}
+
+/* 5. MCP Connector Block (Opposite Cut Shield Corners + Dashed Left Accent, Sky Blue) */
+.n8n-canvas-node.shape-mcp-shield {
+  border-radius: 6px 22px 6px 22px;
+  border: 2px solid #0ea5e9;
+  background: linear-gradient(135deg, hsla(199, 89%, 48%, 0.13) 0%, var(--node--color--background) 70%);
+  box-shadow: 0 4px 14px hsla(199, 89%, 48%, 0.14);
+}
+
+/* 6. Final Response / Output Card (Asymmetric Right Pill, Green Accent) */
+.n8n-canvas-node.shape-output-card {
+  border-radius: 14px 40px 40px 14px;
+  border: 2px solid #16a34a;
+  background: linear-gradient(225deg, hsla(142, 71%, 45%, 0.12) 0%, var(--node--color--background) 65%);
+  box-shadow: 0 4px 14px hsla(142, 71%, 45%, 0.12);
+}
+
+/* 7. Flow Control Nodes (If / Switch / Merge) */
+.n8n-canvas-node.shape-flow-diamond-card {
+  border-radius: 20px 8px 20px 8px;
 }
 
 .n8n-canvas-node.is-selected {

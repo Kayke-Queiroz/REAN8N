@@ -32,18 +32,18 @@ Sobre essa base fiel ao n8n, aplicamos customizações específicas de **Design 
 | Camada | Tecnologias Utilizadas | Detalhes Técnicos |
 | :--- | :--- | :--- |
 | **Frontend UI** | **React 18.3 + TypeScript 5.6** | Componentes funcionais fortemente tipados, Hooks (`useMemo`, `useCallback`, `useRef`) para zero jitter em 60fps. |
-| **Build & Bundler** | **Vite 6.0** | HMR (Hot Module Replacement) instantâneo na porta `5173` e proxy `/api` configurado para `http://localhost:3001`. |
+| **Build & Bundler** | **Vite 6.0** | HMR (Hot Module Replacement) instantâneo na porta `5173` e proxy `/api` configurado para `http://localhost:4000`. |
 | **Ícones** | **Lucide React (`lucide-react`)** | Mapeamento dinâmico em `NodeIcon.tsx` para todos os tipos de nós e barras de ferramentas. |
 | **Estilização** | **CSS Variables (`n8n-tokens.css`) + Inline Dynamic Styles** | Tokens semânticos do n8n customizados para o tema **Branco Gelo** (`light`) e suporte a modo escuro (`body[data-theme="dark"]`). |
 | **Workflow Engine** | **TypeScript Puro (`src/engine/`)** | Grafo `Workflow` e executor `WorkflowExecute` isomórficos (rodam tanto no navegador em tempo real quanto no backend Node.js). |
-| **Backend API** | **Node.js + Express 4.21 + CORS (`tsx`)** | Servidor REST na porta `3001` (`server/index.ts`) para persistência de workflows e execução remota. |
+| **Backend API** | **Node.js + Express 4.21 + CORS (`tsx`)** | Servidor REST na porta `4000` (`server/index.ts`) para persistência de workflows e execução remota. |
 
 ### Comandos do Projeto (`c:\Users\Kayke\OneDrive\Área de Trabalho\Reverse_engeener\n8n-reconstructed`)
 ```bash
 # Iniciar Frontend Vite com HMR (http://localhost:5173)
 npm run dev
 
-# Iniciar Backend Express API (http://localhost:3001)
+# Iniciar Backend Express API (http://localhost:4000)
 npm run server
 
 # Iniciar Frontend + Backend simultaneamente
@@ -62,10 +62,10 @@ n8n-reconstructed/
 ├── index.html                        # Entrypoint HTML (fonte Inter + JetBrains Mono)
 ├── package.json                      # Dependências e scripts npm
 ├── tsconfig.json                     # Configuração TypeScript estrita
-├── vite.config.ts                    # Configuração Vite (porta 5173 + proxy /api -> 3001)
+├── vite.config.ts                    # Configuração Vite (porta 5173 + proxy /api -> 4000)
 ├── ARCHITECTURE_AND_LLM_GUIDE.md     # Este guia arquitetural para LLMs e desenvolvedores
 ├── server/
-│   └── index.ts                      # API Express (GET/POST workflows, POST /api/workflows/:id/run)
+│   └── index.ts                      # API Express na porta 4000 (GET/POST workflows, POST /api/workflows/:id/run)
 └── src/
     ├── main.tsx                      # Bootstrap React 18 + importação de n8n-tokens.css
     ├── App.tsx                       # Orquestrador de Estado Global, Layout Principal e Ações do Grafo
@@ -201,12 +201,41 @@ A interface principal (`App.tsx`) é organizada em uma estrutura **Full-Viewport
 
 ---
 
-## 7. Guia Rápido de Extensão para Futuras Tarefas
+## 7. Sistema de Formatos Visuais (`NodeShapeVariant`), Protótipo IA (Gateway + Skills + MCP) e Integração LLM
 
-- **Como adicionar um novo Tipo de Componente (Nó)**:
-  1. Abra [`src/engine/nodeTypes.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/nodeTypes.ts) e adicione a definição em `NODE_TYPE_DESCRIPTIONS` (definindo `name`, `displayName`, `category`, `icon`, `color`, `inputs`, `outputs` e `properties`).
-  2. Abra [`src/engine/workflowExecute.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/workflowExecute.ts) e adicione o `case` correspondente dentro de `executeSingleNode` para definir como ele transforma os itens `INodeExecutionData[]`.
-  3. O novo componente aparecerá automaticamente na `LeftSidebar`, poderá ser arrastado para o `Canvas`, terá suas portas renderizadas e exibirá seus parâmetros na `RightNodeSidebar`.
+### 7.1. Formatos e Cores Distintas por Tipo de Bloco (Mantendo as Conexões do n8n)
+Para tornar a construção visual intuitiva para **usuários não-técnicos** sem perder a engenharia de linhas e portas do n8n (`main` esquerda/direita + portas losango `ai_languageModel`, `ai_memory`, `ai_tool` com linhas tracejadas `8,8` e snap magnético), cada bloco possui um `shapeVariant`, `badgeLabel` e `color` próprios em [`src/engine/types.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/types.ts), [`src/engine/geometry.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/geometry.ts) e [`src/styles/n8n-tokens.css`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/styles/n8n-tokens.css):
+
+| Bloco / Categoria | Tipo (`type`) | `shapeVariant` | Dimensões | Formato & Cor de Destaque | Porta de Conexão n8n |
+| :--- | :--- | :--- | :--- | :--- | :--- |
+| **Pedido / Entrada** | `ai.promptInput` | `prompt-pill` | `208 × 80 px` | Pílula assimétrica esquerda (`40px 14px 14px 40px`), **Violeta (`#6366f1`)**, badge `PEDIDO` | Saída `main` (direita) |
+| **AI Agent (Cérebro)** | `@n8n/n8n-nodes-langchain.agent` | `agent-card` | `256 × 96 px` | Card largo (`16px` radius), **Coral (`#ff6d5a`)**, badge `AGENTE IA` | Entrada/Saída `main` + 3 portas losango na base (`Chat Model`, `Memory`, `Skill / MCP`) |
+| **Gateway de Modelos** | `ai.modelGateway` | `gateway-capsule` | `176 × 72 px` | Cápsula completa (`999px` radius), **Verde Esmeralda (`#10b981`)**, badge `GATEWAY LLM` | Saída losango no topo (`ai_languageModel`) |
+| **Skill Especializada** | `ai.skillSlideTranscriber` | `skill-hexagon` | `176 × 76 px` | Cantos chanfrados diagonais (`22px 6px 22px 6px`), **Âmbar (`#f59e0b`)**, badge `SKILL` | Saída losango no topo (`ai_tool`) |
+| **Conector MCP** | `ai.mcpGoogleSlides` | `mcp-shield` | `176 × 76 px` | Escudo invertido (`6px 22px 6px 22px`), **Azul Céu (`#0ea5e9`)**, badge `MCP SERVER` | Saída losango no topo (`ai_tool`) |
+| **Entrega / Resposta** | `ai.responseOutput` | `output-card` | `208 × 80 px` | Pílula assimétrica direita (`14px 40px 40px 14px`), **Verde (`#16a34a`)**, badge `ENTREGA` | Entrada/Saída `main` |
+
+---
+
+### 7.2. Como Funciona a Montagem Automática via LLM (`aiWorkflowGenerator.ts`)
+O módulo [`src/engine/aiWorkflowGenerator.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/aiWorkflowGenerator.ts) + endpoint `POST /api/ai/generate-workflow` em [`server/index.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/server/index.ts) permitem que o usuário peça no chat inferior da `LeftSidebar`:
+- *"Monte um agente para transcrever slides do Google Slides usando o Gemini"*
+- *"Troque o modelo do gateway para Claude 3.7 Sonnet"*
+
+Fluxo de execução:
+1. **Envio para LLM Real (Opcional / Plug-and-Play)**:
+   - Se o usuário colar uma `GEMINI_API_KEY` no botão **🔑 Chave** no cabeçalho do chat (ou definir `GEMINI_API_KEY` no ambiente do servidor Express), `generateWorkflowFromPrompt` envia `LLM_WORKFLOW_SYSTEM_PROMPT` com `responseMimeType: "application/json"` para `gemini-2.5-flash`.
+2. **Construtor Semântico Local Instantâneo (`buildSemanticWorkflowFromPrompt`)**:
+   - Caso nenhuma chave de API esteja configurada, o construtor semântico local monta ou atualiza instantaneamente os blocos (`ai.promptInput` → `AI Agent` + `ai.modelGateway` + `ai.skillSlideTranscriber` + `ai.mcpGoogleSlides` → `ai.responseOutput`), cria todas as conexões `main`, `ai_languageModel` e `ai_tool`, e aplica `tidyUpWorkflowNodes` para alinhar tudo sem sobreposição no grid de `16px`.
+
+---
+
+## 8. Guia Rápido de Extensão para Futuras Tarefas
+
+- **Como adicionar uma nova Skill ou novo MCP no futuro**:
+  1. Abra [`src/engine/nodeTypes.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/nodeTypes.ts) e adicione um novo bloco com `category: 'ai_subnode'`, `isConfiguration: true`, `isInlineCard: true`, `shapeVariant: 'skill-hexagon'` (para Skills) ou `'mcp-shield'` (para MCPs), e `outputs: [{ type: 'ai_tool', displayName: 'MCP' }]`.
+  2. Para conectar a execução real de um servidor MCP ou API de LLM durante o clique em *Execute Workflow*, adicione a chamada assíncrona correspondente em `executeSupplementalSubNodes` ou no `case '@n8n/n8n-nodes-langchain.agent'` dentro de [`src/engine/workflowExecute.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/workflowExecute.ts).
 - **Como alterar Cores ou Tema**:
-  1. Edite as variáveis CSS em [`src/styles/n8n-tokens.css`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/styles/n8n-tokens.css) (bloco `:root` para o tema Branco Gelo padrão e `body[data-theme='dark']` para o tema escuro).
+  1. Edite as variáveis CSS e as classes `.shape-*` em [`src/styles/n8n-tokens.css`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/styles/n8n-tokens.css) (bloco `:root` para o tema Branco Gelo padrão e `body[data-theme='dark']` para o tema escuro).
+
 

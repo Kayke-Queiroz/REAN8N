@@ -358,6 +358,58 @@ export class WorkflowExecute {
     const firstJson = inputItems[0]?.json ?? {};
 
     switch (node.type) {
+      case 'ai.promptInput': {
+        return [
+          [
+            {
+              json: {
+                requestTitle:
+                  node.parameters.requestTitle || 'Transcrever Slides',
+                userPrompt:
+                  node.parameters.userPrompt ||
+                  'Transcreva os slides da apresentação e gere tópicos executivos.',
+                presentationId:
+                  node.parameters.presentationId ||
+                  'https://docs.google.com/presentation/d/1A2B3C-SlideDeck-Q4',
+                language: node.parameters.language || 'pt-BR',
+                submittedAt: new Date().toISOString(),
+              },
+              pairedItem: { item: 0 },
+            },
+          ],
+        ];
+      }
+
+      case 'ai.responseOutput': {
+        return [
+          inputItems.map((item, idx) => {
+            const resolvedTitle = workflow.evaluateExpression(
+              node.parameters.documentTitle,
+              {
+                currentNode: node,
+                itemJson: item.json,
+                runData: this.runExecutionData.resultData.runData,
+                itemIndex: idx,
+              },
+            );
+            return {
+              json: {
+                status: 'entregue',
+                channel: node.parameters.channel || 'Documento & Chat',
+                documentTitle: resolvedTitle,
+                finalResponse:
+                  item.json.output ||
+                  item.json.transcribedMarkdown ||
+                  'Transcrição concluída com sucesso.',
+                ...item.json,
+                deliveredAt: new Date().toISOString(),
+              },
+              pairedItem: { item: idx },
+            };
+          }),
+        ];
+      }
+
       case 'n8n-nodes-base.manualTrigger': {
         const rawPayload = String(node.parameters.initialPayload || '{}');
         let parsed: IDataObject = {};
@@ -644,12 +696,18 @@ export class WorkflowExecute {
           runData: this.runExecutionData.resultData.runData,
         });
         const modelInfo =
-          subNodes.ai_languageModel?.[0]?.model ?? 'gpt-4o (default)';
+          subNodes.ai_languageModel?.[0]?.model ?? 'google/gemini-2.5-flash';
         const memoryInfo = subNodes.ai_memory?.[0]
           ? `WindowBuffer(k=${subNodes.ai_memory[0].contextWindowLength})`
           : 'stateless';
         const toolsUsed = (subNodes.ai_tool ?? []).map(
           (t) => t.subNodeName || t.subNodeType,
+        );
+        const hasSlidesTool = (subNodes.ai_tool ?? []).some(
+          (t) =>
+            String(t.subNodeType).includes('Slides') ||
+            String(t.subNodeType).includes('Slide') ||
+            String(t.subNodeName).toLowerCase().includes('slide'),
         );
 
         // Extract numbers in prompt for Calculator tool demo
@@ -663,7 +721,16 @@ export class WorkflowExecute {
           inputItems.map((item, idx) => ({
             json: {
               ...item.json,
-              output: `Análise concluída pelo AI Agent (${modelInfo}): O usuário ${item.json.name || 'Cliente'} no plano '${item.json.plan || 'pro'}' possui projeção calculada de $${calcResult.toLocaleString('pt-BR')}.`,
+              output: hasSlidesTool
+                ? `Transcrição concluída via ${modelInfo} usando [${toolsUsed.join(', ')}]:\n1. Slide 1 (Visão Geral): Alinhamento de metas Q4 e crescimento de 34%.\n2. Slide 2 (Arquitetura): Agentes conectados via Gateway LLM + Google Slides MCP.\n3. Slide 3 (Próximos Passos): Automatizar relatórios semanais para a equipe.`
+                : `Análise concluída pelo AI Agent (${modelInfo}): O usuário ${item.json.name || 'Cliente'} no plano '${item.json.plan || 'pro'}' possui projeção calculada de $${calcResult.toLocaleString('pt-BR')}.`,
+              transcribedSlides: hasSlidesTool
+                ? [
+                    { slide: 1, title: 'Visão Geral Q4', summary: 'Crescimento de 34% em produtividade com Agentes IA.' },
+                    { slide: 2, title: 'Arquitetura MCP & Skills', summary: 'Conexão direta ao Google Slides sem código.' },
+                    { slide: 3, title: 'Plano de Ação', summary: 'Compartilhar resumo executivo automaticamente.' },
+                  ]
+                : undefined,
               agentMetadata: {
                 model: modelInfo,
                 memory: memoryInfo,

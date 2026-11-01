@@ -2,8 +2,128 @@ import { IWorkflowData } from './types';
 
 export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
   {
+    id: 'wf-slide-transcriber-prototype',
+    name: '1. Agente Inteligente: Transcrever Slides (Entrada + IA + Google Slides + Entrega)',
+    active: true,
+    settings: {
+      executionOrder: 'v1',
+      timezone: 'America/Sao_Paulo',
+    },
+    pinData: {},
+    nodes: [
+      {
+        id: 'node-prompt-input',
+        name: 'Entrada de Dados',
+        type: 'ai.promptInput',
+        typeVersion: 1,
+        position: [160, 240],
+        parameters: {
+          inputType: 'Documento PDF',
+          sourceTitle: 'Apresentação Comercial Q4',
+          userPrompt:
+            'Acesse a apresentação no Google Slides, transcreva todos os slides em tópicos e destaque os pontos de ação.',
+          fileUrl:
+            'https://docs.google.com/presentation/d/1A2B3C-SlideDeck-Q4',
+        },
+      },
+      {
+        id: 'node-agent-slides',
+        name: 'Inteligência Artificial (IA)',
+        type: '@n8n/n8n-nodes-langchain.agent',
+        typeVersion: 1.7,
+        position: [496, 224],
+        parameters: {
+          agentRole: 'Especialista em Análise & Síntese',
+          systemMessage:
+            'Você recebe o documento, utiliza o conector Google Slides MCP para ler os dados e aplica a Skill de Transcrição para entregar um resumo claro.',
+          text: '={{$json.userPrompt}}',
+        },
+      },
+      {
+        id: 'node-skill-slides',
+        name: 'Skill: Transcrever Slides',
+        type: 'ai.skillSlideTranscriber',
+        typeVersion: 1,
+        position: [384, 432],
+        parameters: {
+          outputFormat: 'Resumo Executivo',
+          includeSpeakerNotes: true,
+        },
+      },
+      {
+        id: 'node-mcp-gslides',
+        name: 'Google Slides MCP',
+        type: 'ai.mcpGoogleSlides',
+        typeVersion: 1,
+        position: [608, 432],
+        parameters: {
+          action: 'read_presentation',
+          mcpServerUri: 'mcp://google-workspace/slides',
+        },
+      },
+      {
+        id: 'node-response-out',
+        name: 'Saída / Entrega',
+        type: 'ai.responseOutput',
+        typeVersion: 1,
+        position: [864, 240],
+        parameters: {
+          outputType: 'Relatório Formatado',
+          documentTitle: 'Síntese Executiva: Apresentação Q4',
+        },
+      },
+    ],
+    connections: {
+      'Entrada de Dados': {
+        main: [
+          [
+            {
+              node: 'Inteligência Artificial (IA)',
+              type: 'main',
+              index: 0,
+            },
+          ],
+        ],
+      },
+      'Skill: Transcrever Slides': {
+        ai_tool: [
+          [
+            {
+              node: 'Inteligência Artificial (IA)',
+              type: 'ai_tool',
+              index: 0,
+            },
+          ],
+        ],
+      },
+      'Google Slides MCP': {
+        ai_tool: [
+          [
+            {
+              node: 'Inteligência Artificial (IA)',
+              type: 'ai_tool',
+              index: 0,
+            },
+          ],
+        ],
+      },
+      'Inteligência Artificial (IA)': {
+        main: [
+          [
+            {
+              node: 'Saída / Entrega',
+              type: 'main',
+              index: 0,
+            },
+          ],
+        ],
+      },
+    },
+  },
+
+  {
     id: 'wf-ai-agent-pipeline',
-    name: '1. AI Agent & Branching Customer Pipeline (n8n v1.118)',
+    name: '2. AI Agent & Branching Customer Pipeline (n8n v1.118)',
     active: true,
     settings: {
       executionOrder: 'v1',

@@ -21,6 +21,7 @@ import { RightNodeSidebar } from './components/RightNodeSidebar';
 import { NodeCreatorDrawer } from './components/NodeCreatorDrawer';
 import { NodeDetailsModal } from './components/NodeDetailsModal';
 import { ExecutionLogsDrawer } from './components/ExecutionLogsDrawer';
+import { BottomAiChatDrawer } from './components/BottomAiChatDrawer';
 
 export const App: React.FC = () => {
   const [workflow, setWorkflow] = useState<IWorkflowData>(() =>
@@ -42,6 +43,7 @@ export const App: React.FC = () => {
   const [creatorContext, setCreatorContext] =
     useState<EdgeConnectionContext | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
+  const [isAiChatOpen, setIsAiChatOpen] = useState(false);
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
   useEffect(() => {
@@ -98,7 +100,7 @@ export const App: React.FC = () => {
         ),
       }));
     },
-    [],
+    [workflow.nodes],
   );
 
   const handleUpdateNode = useCallback(
@@ -110,7 +112,7 @@ export const App: React.FC = () => {
         ),
       }));
     },
-    [],
+    [workflow.nodes],
   );
 
   const handleRenameNode = useCallback((oldName: string, newName: string) => {
@@ -213,7 +215,7 @@ export const App: React.FC = () => {
         return { ...prev, connections: nextConns };
       });
     },
-    [],
+    [workflow.nodes],
   );
 
   const handleDeleteConnection = useCallback(
@@ -234,7 +236,7 @@ export const App: React.FC = () => {
         return { ...prev, connections: nextConns };
       });
     },
-    [],
+    [workflow.nodes],
   );
 
   const handleDeleteNode = useCallback((nodeName: string) => {
@@ -283,6 +285,23 @@ export const App: React.FC = () => {
 
   const handleAddNodeFromCreator = useCallback(
     (typeDesc: INodeTypeDescription, ctx: EdgeConnectionContext | null) => {
+      const isAi = typeDesc.name === '@n8n/n8n-nodes-langchain.agent';
+      if (isAi && workflow.nodes.some((n) => n.type === '@n8n/n8n-nodes-langchain.agent')) {
+        alert('Por enquanto, é permitido apenas 1 bloco de Inteligência Artificial (IA) por agente.');
+        setCreatorOpen(false);
+        setCreatorContext(null);
+        return;
+      }
+      // Regra de Negócio: Garantir apenas um bloco de IA/LLM por vez no momento
+      const isAiNode =
+        typeDesc.name === '@n8n/n8n-nodes-langchain.agent';
+      if (isAiNode && workflow.nodes.some((n) => n.type === '@n8n/n8n-nodes-langchain.agent')) {
+        alert('Por enquanto, é permitido apenas 1 bloco de Inteligência Artificial (IA) por agente.');
+        setCreatorOpen(false);
+        setCreatorContext(null);
+        return;
+      }
+
       let createdName = '';
       setWorkflow((prev) => {
         let idx = 1;
@@ -365,12 +384,20 @@ export const App: React.FC = () => {
       setCreatorOpen(false);
       setCreatorContext(null);
     },
-    [],
+    [workflow.nodes],
   );
 
   const handleDropNodeOnCanvas = useCallback(
     (nodeTypeName: string, position: [number, number]) => {
       const typeDesc = getNodeTypeDescription(nodeTypeName);
+      // Regra de Negócio: Garantir apenas um bloco de IA/LLM por vez no momento
+      const isAiNode =
+        typeDesc.name === '@n8n/n8n-nodes-langchain.agent';
+      if (isAiNode && workflow.nodes.some((n) => n.type === '@n8n/n8n-nodes-langchain.agent')) {
+        alert('Por enquanto, é permitido apenas 1 bloco de Inteligência Artificial (IA) por agente.');
+        return;
+      }
+
       handleAddNodeFromCreator(typeDesc, {
         sourceNode: '',
         sourceOutputIndex: 0,
@@ -378,7 +405,7 @@ export const App: React.FC = () => {
         position,
       });
     },
-    [handleAddNodeFromCreator],
+    [handleAddNodeFromCreator, workflow.nodes],
   );
 
   const handleTidyUp = useCallback(() => {
@@ -430,19 +457,7 @@ export const App: React.FC = () => {
         workflow={workflow}
         isExecuting={isExecuting}
         theme={theme}
-        logsOpen={logsOpen}
-        onUpdateWorkflowMeta={(patch) =>
-          setWorkflow((prev) => ({ ...prev, ...patch }))
-        }
-        onSelectTemplate={(tpl) => {
-          setWorkflow(structuredClone(tpl));
-          setRunData({});
-          setPinData(tpl.pinData ?? {});
-          setSelectedNodeNames([]);
-          setRightSidebarNodeName(null);
-        }}
         onExecuteWorkflow={() => handleRunWorkflow()}
-        onClearExecution={() => setRunData({})}
         onOpenNodeCreator={() => {
           setCreatorContext(null);
           setCreatorOpen(true);
@@ -450,8 +465,8 @@ export const App: React.FC = () => {
         onToggleTheme={() =>
           setTheme((prev) => (prev === 'dark' ? 'light' : 'dark'))
         }
-        onToggleLogs={() => setLogsOpen((prev) => !prev)}
-        onExportJson={handleExportJson}
+        onToggleAiChat={() => setIsAiChatOpen((prev) => !prev)}
+        isAiChatOpen={isAiChatOpen}
       />
 
       <div
@@ -467,14 +482,9 @@ export const App: React.FC = () => {
         {/* Left Collapsible Sidebar: Draggable Components Palette + Bottom AI Chat */}
         <LeftSidebar
           workflow={workflow}
-          runData={runData}
           onAddNode={(typeDesc) => handleAddNodeFromCreator(typeDesc, null)}
-          onExecuteWorkflow={() => handleRunWorkflow()}
-          onTidyUp={handleTidyUp}
-          onSelectNode={(nodeName) => {
-            setSelectedNodeNames([nodeName]);
-            setRightSidebarNodeName(nodeName);
-          }}
+          onToggleAiChat={() => setIsAiChatOpen((prev) => !prev)}
+          isAiChatOpen={isAiChatOpen}
         />
 
         {/* Center Ice-White ("Branco Gelo") Workflow Canvas */}

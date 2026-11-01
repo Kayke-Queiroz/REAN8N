@@ -443,6 +443,12 @@ export const Canvas: React.FC<CanvasProps> = ({
           finished.nodeName
         ) {
           onOpenNodeDetails(finished.nodeName);
+        } else if (
+          finished.type === 'pan' &&
+          !finished.isDragging
+        ) {
+          // Deselect nodes only if the user performed a stationary click on the empty canvas
+          onSelectNodes([]);
         }
       }
       if (minimapDragRef.current) {
@@ -576,10 +582,6 @@ export const Canvas: React.FC<CanvasProps> = ({
       initialY: viewport.y,
       isDragging: false,
     };
-
-    if (e.button === 0) {
-      onSelectNodes([]);
-    }
   };
 
   // Start potential node drag (or canvas pan if Hand tool is active)
@@ -1317,7 +1319,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                   pointerEvents: 'auto',
                 }}
               >
-                {/* Hover Toolbar above Node (`CanvasNodeToolbar`) */}
+                {/* Floating Toolbar above Node on hover/select (`CanvasNodeToolbar`) */}
                 <div
                   className="n8n-node-toolbar"
                   onMouseDown={(e) => e.stopPropagation()}
@@ -1325,20 +1327,10 @@ export const Canvas: React.FC<CanvasProps> = ({
                   <div className="n8n-node-toolbar-items">
                     <button
                       className="n8n-toolbar-btn"
-                      title="Executar até este nó (Play)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onExecuteSingleNode(node.name);
-                      }}
-                    >
-                      <Play size={13} />
-                    </button>
-                    <button
-                      className="n8n-toolbar-btn"
                       title={
                         node.disabled
-                          ? 'Ativar nó (Tecla D)'
-                          : 'Desativar nó (Tecla D)'
+                          ? 'Ativar bloco (Tecla D)'
+                          : 'Desativar bloco (Tecla D)'
                       }
                       onClick={(e) => {
                         e.stopPropagation();
@@ -1349,17 +1341,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </button>
                     <button
                       className="n8n-toolbar-btn"
-                      title="Fixar / Desafixar dados (Pin Data - Tecla P)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onTogglePinNode(node.name);
-                      }}
-                    >
-                      <Pin size={13} />
-                    </button>
-                    <button
-                      className="n8n-toolbar-btn"
-                      title="Duplicar nó"
+                      title="Duplicar bloco"
                       onClick={(e) => {
                         e.stopPropagation();
                         onDuplicateNode(node.name);
@@ -1369,23 +1351,13 @@ export const Canvas: React.FC<CanvasProps> = ({
                     </button>
                     <button
                       className="n8n-toolbar-btn danger"
-                      title="Excluir nó (Delete)"
+                      title="Excluir bloco (Delete)"
                       onClick={(e) => {
                         e.stopPropagation();
                         onDeleteNode(node.name);
                       }}
                     >
                       <Trash2 size={13} />
-                    </button>
-                    <button
-                      className="n8n-toolbar-btn"
-                      title="Abrir Inspetor de Nó (Duplo clique)"
-                      onClick={(e) => {
-                        e.stopPropagation();
-                        onOpenNodeDetails(node.name);
-                      }}
-                    >
-                      <MoreHorizontal size={13} />
                     </button>
                   </div>
                 </div>
@@ -1395,7 +1367,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                   className={[
                     'n8n-canvas-node',
                     desc.isTrigger ? 'is-trigger' : '',
-                    desc.isConfiguration ? 'is-configuration' : '',
+                    desc.isConfiguration && !desc.isInlineCard ? 'is-configuration' : '',
+                    desc.shapeVariant ? `shape-${desc.shapeVariant}` : '',
                     isSelected ? 'is-selected' : '',
                     node.disabled ? 'is-disabled' : '',
                     statusClass,
@@ -1405,9 +1378,17 @@ export const Canvas: React.FC<CanvasProps> = ({
                   style={{
                     width,
                     height,
-                    padding: desc.isConfigurable ? '0 16px' : 0,
-                    justifyContent: desc.isConfigurable ? 'flex-start' : 'center',
-                    gap: desc.isConfigurable ? 12 : 0,
+                    padding:
+                      desc.isConfigurable || desc.isInlineCard
+                        ? '0 14px'
+                        : 0,
+                    justifyContent:
+                      desc.isConfigurable || desc.isInlineCard
+                        ? 'flex-start'
+                        : 'center',
+                    gap: desc.isConfigurable || desc.isInlineCard ? 10 : 0,
+                    borderColor:
+                      !statusClass && !node.disabled ? desc.color : undefined,
                     cursor: interactionMode === 'pan' ? 'grab' : 'grab',
                   }}
                   onMouseDown={(e) => handleNodeMouseDown(e, node)}
@@ -1431,8 +1412,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                     />
                   )}
 
-                  {/* Trigger Bolt Badge on Left Edge */}
-                  {desc.isTrigger && (
+                  {/* Trigger Bolt Badge on Left Edge (Desativado para entrada de documentos e repetidor para manter visual limpo) */}
+                  {desc.isTrigger && !['ai.promptInput', 'ai.inputPdf', 'ai.inputDocs', 'ai.inputSheets', 'ai.inputText', 'ai.repeater'].includes(node.type) && (
                     <div
                       style={{
                         position: 'absolute',
@@ -1442,7 +1423,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         width: 20,
                         height: 20,
                         borderRadius: '50%',
-                        backgroundColor: 'var(--color--primary)',
+                        backgroundColor: desc.color || 'var(--color--primary)',
                         color: '#fff',
                         display: 'flex',
                         alignItems: 'center',
@@ -1451,29 +1432,79 @@ export const Canvas: React.FC<CanvasProps> = ({
                         fontWeight: 700,
                         boxShadow: 'var(--shadow)',
                       }}
-                      title="Trigger Node"
+                      title="Bloco Inicial / Gatilho"
                     >
                       ⚡
+                    </div>
+                  )}
+
+                  {/* Category / Shape Pill Badge on Top-Right of Non-Inline Standard Nodes */}
+                  {!desc.isInlineCard && !desc.isConfigurable && desc.badgeLabel && (
+                    <div
+                      style={{
+                        position: 'absolute',
+                        top: -9,
+                        left: '50%',
+                        transform: 'translateX(-50%)',
+                        backgroundColor: desc.color,
+                        color: '#ffffff',
+                        fontSize: 8.5,
+                        fontWeight: 800,
+                        letterSpacing: 0.4,
+                        padding: '1px 6px',
+                        borderRadius: 999,
+                        whiteSpace: 'nowrap',
+                        boxShadow: '0 1px 4px rgba(0,0,0,0.12)',
+                        pointerEvents: 'none',
+                      }}
+                    >
+                      {desc.badgeLabel}
                     </div>
                   )}
 
                   <NodeIcon
                     iconName={desc.icon}
                     color={desc.color}
-                    size={desc.isConfiguration ? 34 : 42}
+                    size={
+                      desc.isInlineCard
+                        ? 38
+                        : desc.isConfiguration
+                          ? 34
+                          : 42
+                    }
                   />
 
-                  {/* Inline Title & Subtitle for Configurable Wide Nodes (AI Agent 256x96) */}
-                  {desc.isConfigurable && (
-                    <div style={{ overflow: 'hidden' }}>
+                  {/* Inline Badge, Title & Live Parameter Preview for AI/Gateway/Skill/MCP/Input/Output Blocks */}
+                  {(desc.isConfigurable || desc.isInlineCard) && (
+                    <div style={{ overflow: 'hidden', flex: 1, minWidth: 0 }}>
+                      {desc.badgeLabel && (
+                        <div
+                          style={{
+                            display: 'inline-block',
+                            fontSize: 9,
+                            fontWeight: 800,
+                            letterSpacing: 0.45,
+                            textTransform: 'uppercase',
+                            color: desc.color,
+                            backgroundColor: `${desc.color}18`,
+                            border: `1px solid ${desc.color}40`,
+                            borderRadius: 999,
+                            padding: '1px 6px',
+                            marginBottom: 2,
+                          }}
+                        >
+                          {desc.badgeLabel}
+                        </div>
+                      )}
                       <div
                         style={{
-                          fontSize: 14.5,
-                          fontWeight: 600,
+                          fontSize: desc.isConfigurable ? 14 : 12.5,
+                          fontWeight: 700,
                           color: 'var(--color--text--shade-1)',
                           whiteSpace: 'nowrap',
                           overflow: 'hidden',
                           textOverflow: 'ellipsis',
+                          lineHeight: 1.2,
                         }}
                       >
                         {node.name}
@@ -1481,9 +1512,12 @@ export const Canvas: React.FC<CanvasProps> = ({
                       {subtitleText && (
                         <div
                           style={{
-                            fontSize: 12,
+                            fontSize: 10.5,
                             color: 'var(--color--text--tint-1)',
                             marginTop: 2,
+                            whiteSpace: 'nowrap',
+                            overflow: 'hidden',
+                            textOverflow: 'ellipsis',
                           }}
                         >
                           {subtitleText}
@@ -1497,7 +1531,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                     style={{
                       position: 'absolute',
                       bottom: 5,
-                      right: 6,
+                      right: 8,
                       display: 'flex',
                       alignItems: 'center',
                       gap: 3,
@@ -1541,8 +1575,8 @@ export const Canvas: React.FC<CanvasProps> = ({
                   </div>
                 </div>
 
-                {/* Below-Node Label & Subtitle */}
-                {!desc.isConfigurable && (
+                {/* Below-Node Label & Subtitle for Compact Non-Inline Nodes */}
+                {!desc.isConfigurable && !desc.isInlineCard && (
                   <div
                     style={{
                       position: 'absolute',
@@ -1647,43 +1681,6 @@ export const Canvas: React.FC<CanvasProps> = ({
                         connectingRef.current = nextConn;
                         setConnecting(nextConn);
                       }}
-                      onMouseUp={(e) => {
-                        e.stopPropagation();
-                        const currConn = connectingRef.current || connecting;
-                        if (
-                          currConn &&
-                          isValidHandleConnection(
-                            currConn.sourceNode,
-                            currConn.sourceMode,
-                            currConn.sourceType,
-                            node.name,
-                            h.mode,
-                            h.type,
-                          )
-                        ) {
-                          if (currConn.sourceMode === 'outputs') {
-                            onConnect(
-                              currConn.sourceNode,
-                              currConn.sourceType,
-                              currConn.sourceIndex,
-                              node.name,
-                              h.type,
-                              h.index,
-                            );
-                          } else {
-                            onConnect(
-                              node.name,
-                              h.type,
-                              h.index,
-                              currConn.sourceNode,
-                              currConn.sourceType,
-                              currConn.sourceIndex,
-                            );
-                          }
-                        }
-                        connectingRef.current = null;
-                        setConnecting(null);
-                      }}
                     >
                       <div
                         className={[
@@ -1751,50 +1748,7 @@ export const Canvas: React.FC<CanvasProps> = ({
                         </span>
                       )}
 
-                      {/* Unconnected Main Output `+` Extension (`CanvasHandlePlus`) positioned outside the 28x28 hit area */}
-                      {h.mode === 'outputs' &&
-                        h.type === 'main' &&
-                        outgoingCount === 0 && (
-                          <div
-                            onMouseDown={(e) => e.stopPropagation()}
-                            style={{
-                              position: 'absolute',
-                              left: '50%',
-                              top: '50%',
-                              transform: 'translateY(-50%)',
-                              marginLeft: 7,
-                              display: 'flex',
-                              alignItems: 'center',
-                              pointerEvents: 'auto',
-                            }}
-                          >
-                            <div
-                              style={{
-                                width: 22,
-                                height: 2,
-                                backgroundColor: 'var(--color--foreground--shade-2)',
-                              }}
-                            />
-                            <button
-                              className="n8n-handle-plus-btn"
-                              title="Adicionar e conectar próximo nó"
-                              onClick={(e) => {
-                                e.stopPropagation();
-                                onOpenCreatorFromContext({
-                                  sourceNode: node.name,
-                                  sourceOutputIndex: h.index,
-                                  connectionType: 'main',
-                                  position: [
-                                    snapToGrid(node.position[0] + width + 128),
-                                    snapToGrid(node.position[1]),
-                                  ],
-                                });
-                              }}
-                            >
-                              <Plus size={13} />
-                            </button>
-                          </div>
-                        )}
+
                     </div>
                   );
                 })}
@@ -1858,7 +1812,16 @@ export const Canvas: React.FC<CanvasProps> = ({
                   const desc = getNodeTypeDescription(n.type);
                   const isSelected = selectedNodeNames.includes(n.name);
                   const isRunning = runningNodeName === n.name;
-                  const rx = desc.isConfiguration ? 40 : MINIMAP_NODE_RX;
+                  const rx =
+                    desc.shapeVariant === 'gateway-capsule' ||
+                    desc.shapeVariant === 'circle'
+                      ? 36
+                      : desc.shapeVariant === 'prompt-pill' ||
+                          desc.shapeVariant === 'output-card'
+                        ? 24
+                        : desc.isConfiguration
+                          ? 36
+                          : MINIMAP_NODE_RX;
                   return (
                     <rect
                       key={n.id}
@@ -1871,6 +1834,15 @@ export const Canvas: React.FC<CanvasProps> = ({
                       height={height}
                       rx={rx}
                       ry={rx}
+                      style={{
+                        fill: isRunning
+                          ? 'var(--color--primary)'
+                          : isSelected
+                            ? desc.color
+                            : `${desc.color}42`,
+                        stroke: desc.color,
+                        strokeWidth: 4,
+                      }}
                       shapeRendering="geometricPrecision"
                     />
                   );
