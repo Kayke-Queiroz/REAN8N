@@ -14,19 +14,56 @@ import { Workflow } from './engine/workflow';
 import { WorkflowExecute } from './engine/workflowExecute';
 import { snapToGrid, tidyUpWorkflowNodes } from './engine/geometry';
 import { getNodeTypeDescription } from './engine/nodeTypes';
-import { TopNavBar } from './components/TopNavBar';
+import { TopNavBar, StudioViewTab } from './components/TopNavBar';
 import { Canvas, EdgeConnectionContext } from './components/Canvas';
 import { LeftSidebar } from './components/LeftSidebar';
 import { RightNodeSidebar } from './components/RightNodeSidebar';
 import { NodeCreatorDrawer } from './components/NodeCreatorDrawer';
 import { NodeDetailsModal } from './components/NodeDetailsModal';
 import { ExecutionLogsDrawer } from './components/ExecutionLogsDrawer';
-import { BottomAiChatDrawer } from './components/BottomAiChatDrawer';
+import { BottomAiChatDrawer, ChatMessage } from './components/BottomAiChatDrawer';
+import { UseAgentChatView } from './components/UseAgentChatView';
+import {
+  CompiledAgentRecord,
+  compileAgentFromWorkflow,
+  getCompiledAgentById,
+  saveCompiledAgentToDatabase,
+  validateAgentWorkflow,
+} from './engine/agentDatabase';
+
+const SAVED_AGENTS_STORAGE_KEY = 'ai_agent_studio_saved_agents_v1';
+const CREATED_STATUS_STORAGE_KEY = 'ai_agent_studio_created_map_v1';
 
 export const App: React.FC = () => {
+  const [savedAgents, setSavedAgents] = useState<IWorkflowData[]>(() => {
+    try {
+      const raw = localStorage.getItem(SAVED_AGENTS_STORAGE_KEY);
+      if (raw) {
+        const parsed = JSON.parse(raw);
+        if (Array.isArray(parsed) && parsed.length > 0) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return structuredClone(SAMPLE_WORKFLOWS);
+  });
+
   const [workflow, setWorkflow] = useState<IWorkflowData>(() =>
-    structuredClone(SAMPLE_WORKFLOWS[0]),
+    structuredClone(savedAgents[0] || SAMPLE_WORKFLOWS[0]),
   );
+
+  // Tracks which agent IDs have already been "Created" (compiled) via "Criar Agente"
+  const [createdAgentMap, setCreatedAgentMap] = useState<Record<string, boolean>>(() => {
+    try {
+      const raw = localStorage.getItem(CREATED_STATUS_STORAGE_KEY);
+      if (raw) return JSON.parse(raw);
+    } catch {
+      // ignore
+    }
+    return {};
+  });
+
+  const [activeMainTab, setActiveMainTab] = useState<StudioViewTab>('builder');
   const [runData, setRunData] = useState<IRunData>({});
   const [pinData, setPinData] = useState<IPinData>(workflow.pinData ?? {});
   const [runningNodeName, setRunningNodeName] = useState<string | null>(null);
@@ -44,21 +81,74 @@ export const App: React.FC = () => {
     useState<EdgeConnectionContext | null>(null);
   const [logsOpen, setLogsOpen] = useState(false);
   const [isAiChatOpen, setIsAiChatOpen] = useState(false);
+  const [chatMessages, setChatMessages] = useState<ChatMessage[]>([
+    {
+      id: 'welcome-ai-builder',
+      role: 'assistant',
+      text: 'Olá! Sou o Construtor IA. Peça: "Monte um agente para transcrever slides do Google Slides" e eu monto os blocos para você no canvas!',
+      timestamp: 'Agora',
+      actionBadge: 'Construtor Pronto',
+    },
+  ]);
   const [theme, setTheme] = useState<'dark' | 'light'>('light');
 
   useEffect(() => {
     document.body.dataset.theme = theme;
   }, [theme]);
 
+  // Persist current workflow changes into savedAgents list & localStorage
+  useEffect(() => {
+    setSavedAgents((prev) => {
+      const exists = prev.some((a) => a.id === workflow.id);
+      const next = exists
+        ? prev.map((a) => (a.id === workflow.id ? workflow : a))
+        : [workflow, ...prev];
+      try {
+        localStorage.setItem(SAVED_AGENTS_STORAGE_KEY, JSON.stringify(next));
+      } catch {
+        // ignore
+      }
+      return next;
+    });
+  }, [workflow]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(CREATED_STATUS_STORAGE_KEY, JSON.stringify(createdAgentMap));
+    } catch {
+      // ignore
+    }
+  }, [createdAgentMap]);
+
+  const [compiledAgent, setCompiledAgent] =
+    useState<CompiledAgentRecord | null>(() =>
+      getCompiledAgentById(workflow.id),
+    );
+
+  useEffect(() => {
+    setCompiledAgent(getCompiledAgentById(workflow.id));
+  }, [workflow.id]);
+
+  const isCurrentAgentCreated = Boolean(
+    createdAgentMap[workflow.id] || compiledAgent?.status === 'created',
+  );
+
   const workflowModel = useMemo(
     () => new Workflow({ ...workflow, pinData }),
     [workflow, pinData],
   );
 
-  // Execute full workflow or partial workflow up to `destinationNode`
+  // Execute full workflow or partial workflow up to `destinationNode` and register in DB
   const handleRunWorkflow = useCallback(
     async (destinationNode?: string) => {
       if (isExecuting) return;
+
+      const validation = validateAgentWorkflow(workflow);
+      if (!validation.valid) {
+        alert(validation.errors.join('\n'));
+        return;
+      }
+
       setIsExecuting(true);
       setRunData({});
 
@@ -80,7 +170,22 @@ export const App: React.FC = () => {
       });
 
       try {
-        await engine.run(wfInstance, undefined, destinationNode, pinData);
+        const execResult = await engine.run(
+          wfInstance,
+          undefined,
+          destinationNode,
+          pinData,
+        );
+        const compiled = compileAgentFromWorkflow(
+          workflow,
+          execResult.resultData.runData,
+        );
+        await saveCompiledAgentToDatabase(compiled);
+        setCompiledAgent(compiled);
+        setCreatedAgentMap((prev) => ({
+          ...prev,
+          [workflow.id]: true,
+        }));
       } catch (err) {
         console.error('Workflow execution error:', err);
       } finally {
@@ -455,6 +560,12 @@ export const App: React.FC = () => {
     >
       <TopNavBar
         workflow={workflow}
+        isAgentCreated={isCurrentAgentCreated}
+        activeMainTab={activeMainTab}
+        onChangeMainTab={(tab) => setActiveMainTab(tab)}
+        onUpdateAgentName={(newName) =>
+          setWorkflow((prev) => ({ ...prev, name: newName }))
+        }
         isExecuting={isExecuting}
         theme={theme}
         onExecuteWorkflow={() => handleRunWorkflow()}
@@ -469,89 +580,118 @@ export const App: React.FC = () => {
         isAiChatOpen={isAiChatOpen}
       />
 
-      <div
-        style={{
-          flex: 1,
-          minHeight: 0,
-          minWidth: 0,
-          position: 'relative',
-          display: 'flex',
-          overflow: 'hidden',
-        }}
-      >
-        {/* Left Collapsible Sidebar: Draggable Components Palette + Bottom AI Chat */}
-        <LeftSidebar
+      {activeMainTab === 'use-agent' ? (
+        <UseAgentChatView
           workflow={workflow}
-          onAddNode={(typeDesc) => handleAddNodeFromCreator(typeDesc, null)}
-          onToggleAiChat={() => setIsAiChatOpen((prev) => !prev)}
-          isAiChatOpen={isAiChatOpen}
+          compiledAgent={compiledAgent}
+          onUpdateCompiledAgent={(updated) => setCompiledAgent(updated)}
+          isAgentCreated={isCurrentAgentCreated}
+          isCreatingAgent={isExecuting}
+          onCreateAgentNow={() => handleRunWorkflow()}
+          onBackToEditor={() => setActiveMainTab('builder')}
         />
+      ) : (
+        <div
+          style={{
+            flex: 1,
+            minHeight: 0,
+            minWidth: 0,
+            position: 'relative',
+            display: 'flex',
+            overflow: 'hidden',
+          }}
+        >
+          {/* Left Collapsible Sidebar: Draggable Components Palette + Bottom AI Chat */}
+          <LeftSidebar
+            workflow={workflow}
+            onAddNode={(typeDesc) => handleAddNodeFromCreator(typeDesc, null)}
+            onToggleAiChat={() => setIsAiChatOpen((prev) => !prev)}
+            isAiChatOpen={isAiChatOpen}
+          />
 
-        {/* Center Ice-White ("Branco Gelo") Workflow Canvas */}
-        <Canvas
-          workflowId={workflow.id}
-          workflowModel={workflowModel}
-          nodes={workflow.nodes}
-          connections={workflow.connections}
-          runData={runData}
-          pinData={pinData}
-          runningNodeName={runningNodeName}
-          selectedNodeNames={selectedNodeNames}
-          onSelectNodes={handleSelectNodesOnCanvas}
-          onUpdateNodePosition={handleUpdateNodePosition}
-          onOpenNodeDetails={(name) => {
-            setSelectedNodeNames([name]);
-            setRightSidebarNodeName(name);
-          }}
-          onExecuteSingleNode={(name) => handleRunWorkflow(name)}
-          onToggleDisableNode={handleToggleDisableNode}
-          onTogglePinNode={handleTogglePinNode}
-          onDuplicateNode={handleDuplicateNode}
-          onDeleteNode={handleDeleteNode}
-          onConnect={handleConnect}
-          onDeleteConnection={handleDeleteConnection}
-          onOpenCreatorFromContext={(ctx) => {
-            setCreatorContext(ctx);
-            setCreatorOpen(true);
-          }}
-          onDropNodeType={handleDropNodeOnCanvas}
-          onTidyUp={handleTidyUp}
-        />
+          {/* Center Ice-White ("Branco Gelo") Workflow Canvas */}
+          <Canvas
+            workflowId={workflow.id}
+            workflowModel={workflowModel}
+            nodes={workflow.nodes}
+            connections={workflow.connections}
+            runData={runData}
+            pinData={pinData}
+            runningNodeName={runningNodeName}
+            selectedNodeNames={selectedNodeNames}
+            onSelectNodes={handleSelectNodesOnCanvas}
+            onUpdateNodePosition={handleUpdateNodePosition}
+            onOpenNodeDetails={(name) => {
+              setSelectedNodeNames([name]);
+              setRightSidebarNodeName(name);
+            }}
+            onExecuteSingleNode={(name) => handleRunWorkflow(name)}
+            onToggleDisableNode={handleToggleDisableNode}
+            onTogglePinNode={handleTogglePinNode}
+            onDuplicateNode={handleDuplicateNode}
+            onDeleteNode={handleDeleteNode}
+            onConnect={handleConnect}
+            onDeleteConnection={handleDeleteConnection}
+            onOpenCreatorFromContext={(ctx) => {
+              setCreatorContext(ctx);
+              setCreatorOpen(true);
+            }}
+            onDropNodeType={handleDropNodeOnCanvas}
+            onTidyUp={handleTidyUp}
+          />
 
-        {/* Right Node Inspector Sidebar: Opens automatically when clicking any node */}
-        <RightNodeSidebar
-          node={rightSidebarNode}
-          workflowModel={workflowModel}
-          runData={runData}
-          pinData={pinData}
-          onClose={() => {
-            setRightSidebarNodeName(null);
-            setSelectedNodeNames([]);
-          }}
-          onOpenFullModal={(nodeName) => setActiveDetailsNodeName(nodeName)}
-          onSelectNode={(nodeName) => {
-            setSelectedNodeNames([nodeName]);
-            setRightSidebarNodeName(nodeName);
-          }}
-          onUpdateNode={handleUpdateNode}
-          onRenameNode={handleRenameNode}
-          onExecuteNode={(name) => handleRunWorkflow(name)}
-          onToggleDisableNode={handleToggleDisableNode}
-          onTogglePinData={handleTogglePinNode}
-          onDuplicateNode={handleDuplicateNode}
-          onDeleteNode={handleDeleteNode}
-        />
+          {/* Right Node Inspector Sidebar: Opens automatically when clicking any node */}
+          <RightNodeSidebar
+            node={rightSidebarNode}
+            workflowModel={workflowModel}
+            runData={runData}
+            pinData={pinData}
+            onClose={() => {
+              setRightSidebarNodeName(null);
+              setSelectedNodeNames([]);
+            }}
+            onOpenFullModal={(nodeName) => setActiveDetailsNodeName(nodeName)}
+            onSelectNode={(nodeName) => {
+              setSelectedNodeNames([nodeName]);
+              setRightSidebarNodeName(nodeName);
+            }}
+            onUpdateNode={handleUpdateNode}
+            onRenameNode={handleRenameNode}
+            onExecuteNode={(name) => handleRunWorkflow(name)}
+            onToggleDisableNode={handleToggleDisableNode}
+            onTogglePinData={handleTogglePinNode}
+            onDuplicateNode={handleDuplicateNode}
+            onDeleteNode={handleDeleteNode}
+          />
 
-        <NodeCreatorDrawer
-          isOpen={creatorOpen}
-          connectionContext={creatorContext}
-          onClose={() => {
-            setCreatorOpen(false);
-            setCreatorContext(null);
-          }}
-          onSelectNodeType={handleAddNodeFromCreator}
-        />
-      </div>
+          <NodeCreatorDrawer
+            isOpen={creatorOpen}
+            connectionContext={creatorContext}
+            onClose={() => {
+              setCreatorOpen(false);
+              setCreatorContext(null);
+            }}
+            onSelectNodeType={handleAddNodeFromCreator}
+          />
+        </div>
+      )}
+
+      <BottomAiChatDrawer
+        isOpen={isAiChatOpen}
+        onClose={() => setIsAiChatOpen(false)}
+        workflow={workflow}
+        onApplyGeneratedWorkflow={(nextWf) => {
+          setWorkflow(structuredClone(nextWf));
+          setRunData({});
+          setPinData(nextWf.pinData ?? {});
+          setSelectedNodeNames([]);
+          setRightSidebarNodeName(null);
+        }}
+        onExecuteWorkflow={() => handleRunWorkflow()}
+        onTidyUp={handleTidyUp}
+        messages={chatMessages}
+        setMessages={setChatMessages}
+      />
 
       <ExecutionLogsDrawer
         isOpen={logsOpen}

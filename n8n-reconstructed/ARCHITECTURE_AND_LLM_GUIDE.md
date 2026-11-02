@@ -1,241 +1,175 @@
-# Documentação de Arquitetura, Stack e Guia de Contexto para LLMs (`n8n-reconstructed`)
+# Documentação de Arquitetura, Stack e Guia de Contexto para LLMs (`AI Agent Studio / n8n-reconstructed`)
 
-> **Propósito deste Documento (LLM Handover / Context Guide)**:
-> Este documento foi estruturado especificamente para que **qualquer LLM / Agente de IA ou Desenvolvedor** que assuma a manutenção ou evolução deste projeto compreenda imediatamente:
-> 1. O processo de Engenharia Reversa estática executado sobre o **n8n v1.118.1** via **REA (`reverse-engineer-anything`)**.
-> 2. A **Stack Tecnológica** completa (Frontend, Engine de Grafo/Execução e Backend).
-> 3. A **Arquitetura da Aplicação**, fluxo de estado unidirecional e modelo de dados (`INode`, `IConnections`, `IRunData`, `IPinData`).
-> 4. A **Organização dos Componentes**, geometria matemática do Canvas (Grid `16px`, Curvas de Bézier, Loops SmoothStep, Snap Magnético de Conexões, Minimapa com Máscara `evenodd`) e **Regras de Interação UX** que não devem ser quebradas em edições futuras.
-
----
-
-## 1. Visão Geral do Projeto & Origem (Engenharia Reversa REA)
-
-O projeto `n8n-reconstructed` é uma reconstrução full-stack moderna e customizada da plataforma de automação de workflows **n8n**, construída a partir de evidências estáticas extraídas da instalação local do `n8n@1.118.1`:
-- **Pacote Core Analisado (`n8n-workflow`)**:
-  - `Workflow.js` (modelo de grafo direcionado, indexação reversa `connectionsByDestinationNode`, travessia de ancestrais/descendentes).
-  - `WorkflowExecute.js` (motor de execução determinístico baseado em pilha `nodeExecutionStack` e fila de sincronização multi-input `waitingExecution`).
-- **Pacote UI Analisado (`n8n-editor-ui`)**:
-  - `Canvas-Td0SIV0U.js` e `Canvas-Bn6gWZ4a.css` (geometria de nós no grid `16px`, curvas de conexão, `@vue-flow/minimap`, handles `main` e `ai_*`).
-  - `index-D9KM9gTZ.css` (sistema de Design Tokens primitivos e semânticos).
-
-Sobre essa base fiel ao n8n, aplicamos customizações específicas de **Design & UX**:
-1. **Tema Padrão "Branco Gelo" (Ice-White)**: Superfície do canvas em `#f3f7fb` com pontos do grid em `#cdd8e6`.
-2. **Sidebar Esquerda Minimizável (`LeftSidebar.tsx`)**: Biblioteca de componentes arrastáveis (`Drag-and-Drop` para o Canvas) na parte superior + **Chat Copiloto IA** integrado na parte inferior.
-3. **Sidebar Direita Contextual (`RightNodeSidebar.tsx`)**: Inspetor completo do nó (Parâmetros, Dados I/O em tempo real e Metadados/Conexões) que **abre exclusivamente ao clicar em um componente** (nunca ao arrastar).
-4. **Conexão Magnética Inteligente ("Bolinha")**: Portas de entrada/saída centralizadas com área de captura de `28x28px` e *snap* magnético automático ao aproximar o fio de uma porta (`<= 48px`) ou sobrevoar o corpo de qualquer componente compatível.
+> **Propósito deste Documento (LLM Handover / Architecture Guide)**:
+> Este documento foi elaborado especificamente para que **qualquer LLM / Agente de IA ou Engenheiro de Software** que assuma este projeto compreenda imediatamente:
+> 1. A arquitetura da plataforma **AI Agent Studio** (evoluída a partir da engenharia reversa do **n8n v1.118.1** via REA).
+> 2. O pipeline de **Compilação de Agentes**, armazenamento estruturado no Banco de Dados (`agents.json` + `localStorage`) e sincronização de estado.
+> 3. Como funciona a separação e lapidação de prompts em blocos especializados (Entrada, Cérebro IA, Skills, Repetidor, Saída).
+> 4. A execução com **Google Gemini (Multimodal nativo com inlineData para PDF/Docs)**, failover automático e síntese executiva limpa (sem tags cruas `###`).
+> 5. A interface conversacional ChatGPT-like (**Usar Agente**) com upload de documentos via `+`, persistência de mensagens e regras de UX/Canvas.
 
 ---
 
-## 2. Stack Tecnológica & Scripts de Execução
+## 1. Visão Geral do Sistema
 
-| Camada | Tecnologias Utilizadas | Detalhes Técnicos |
+O projeto é um estúdio no-code/low-code visual focado na **criação, configuração e utilização imediata de Agentes de IA Inteligentes**. Ele opera em dois modos principais coordenados no topo:
+1. **Aba "Montar Blocos" (`builder`)**: Canvas visual no grid de `16px` onde o usuário conecta blocos funcionais (Entradas de Dados, Cérebro IA, Skills Especializadas, Conectores MCP, Repetidor Circular de Prazos e Entregas Formatadas).
+2. **Aba "Usar Agente" (`use-agent`)**: Interface conversacional estilo ChatGPT onde o usuário interage diretamente com o agente compilado. Permite anexar arquivos (`PDF`, `DOCX`, `TXT`, `CSV`) pelo botão **`+`**, salva todo o histórico de mensagens no banco de dados e executa chamadas multimodais ao vivo via Gemini.
+
+---
+
+## 2. Stack Tecnológica Completa
+
+| Camada | Tecnologia | Função e Detalhes |
 | :--- | :--- | :--- |
-| **Frontend UI** | **React 18.3 + TypeScript 5.6** | Componentes funcionais fortemente tipados, Hooks (`useMemo`, `useCallback`, `useRef`) para zero jitter em 60fps. |
-| **Build & Bundler** | **Vite 6.0** | HMR (Hot Module Replacement) instantâneo na porta `5173` e proxy `/api` configurado para `http://localhost:4000`. |
-| **Ícones** | **Lucide React (`lucide-react`)** | Mapeamento dinâmico em `NodeIcon.tsx` para todos os tipos de nós e barras de ferramentas. |
-| **Estilização** | **CSS Variables (`n8n-tokens.css`) + Inline Dynamic Styles** | Tokens semânticos do n8n customizados para o tema **Branco Gelo** (`light`) e suporte a modo escuro (`body[data-theme="dark"]`). |
-| **Workflow Engine** | **TypeScript Puro (`src/engine/`)** | Grafo `Workflow` e executor `WorkflowExecute` isomórficos (rodam tanto no navegador em tempo real quanto no backend Node.js). |
-| **Backend API** | **Node.js + Express 4.21 + CORS (`tsx`)** | Servidor REST na porta `4000` (`server/index.ts`) para persistência de workflows e execução remota. |
+| **Frontend UI** | **React 18.3 + TypeScript 5.6** | Tipagem estrita de nós, conexões e mensagens. Hooks performáticos (`useMemo`, `useCallback`, `useRef`). |
+| **Build & Dev Server** | **Vite 6.0** | HMR instantâneo na porta `5173` com proxy `/api` apontando para o backend na porta `4000`. |
+| **Estilização** | **CSS Variables (`n8n-tokens.css`) + Inline Styles** | Tema padrão "Branco Gelo" (`#f3f7fb`), suporte a modo escuro e layout responsivo. |
+| **Ícones** | **Lucide React (`lucide-react`)** | Renderização vetorial padronizada via componente central `NodeIcon.tsx`. |
+| **Engine de Workflows** | **TypeScript Puro (`src/engine/`)** | Grafo direcionado (`Workflow.ts`), motor de execução determinístico (`WorkflowExecute.ts`) e geometria com auto-layout (`geometry.ts`). |
+| **Compilador & DB** | **`agentDatabase.ts` + `server/db/agents.json`** | Compila nós do canvas em um registro persistente `CompiledAgentRecord`, salva histórico de chat e gerencia cache local. |
+| **Provedor de LLM** | **Google Gemini API (`v1beta`)** | Execução ao vivo com suporte multimodal (`inlineData: { mimeType: 'application/pdf', data: base64 }`) e failover dinâmico (`gemini-2.5-flash` ➔ `gemini-3.8-flash`). |
+| **Backend API** | **Node.js + Express 4.21 (`tsx`)** | Endpoints REST (`/api/health`, `/api/workflows`, `/api/agents`, `/api/ai/generate-workflow`, `/api/workflows/execute`). |
 
-### Comandos do Projeto (`c:\Users\Kayke\OneDrive\Área de Trabalho\Reverse_engeener\n8n-reconstructed`)
-```bash
-# Iniciar Frontend Vite com HMR (http://localhost:5173)
-npm run dev
+---
 
-# Iniciar Backend Express API (http://localhost:4000)
-npm run server
+## 3. Catálogo Padronizado de Blocos e Regras de Negócio
 
-# Iniciar Frontend + Backend simultaneamente
-npm run dev:all
+Cada bloco possui um papel estrito no fluxo do agente:
 
-# Verificar tipagem TypeScript e gerar bundle de produção
-npm run build
+```mermaid
+flowchart LR
+    A["Entrada de Dados<br/>(ai.inputPdf / Sheets / Text)"] -->|main| B["Cérebro IA (1 único)<br/>(@n8n/n8n-nodes-langchain.agent)"]
+    R["Repetidor Circular<br/>(ai.repeater)"] -->|main| B
+    S["Skill Personalizada / Transcritor<br/>(ai.customSkill / slideTranscriber)"] -->|ai_tool| B
+    M["Conector MCP<br/>(ai.mcpGoogleSlides)"] -->|ai_tool| B
+    B -->|main| C["Saída / Entrega<br/>(ai.outputReport / Dashboard / Text)"]
 ```
 
+### Regras de Ouro dos Blocos:
+1. **Regra de 1 Bloco de IA por Agente**: No momento, cada agente possui exatamente **1 bloco de IA central** (`@n8n/n8n-nodes-langchain.agent`). O estúdio bloqueia a adição de múltiplos blocos de IA no canvas para garantir clareza cognitiva.
+2. **Entradas (`trigger`)**: Borda azul (`#3b82f6`). Não usam ícone de raio (`⚡`). Coletam documentos, links ou textos brutos.
+3. **Cérebro IA (`isConfigurable`)**: Borda coral (`#ff6d5a`). Contém papel (`agentRole`), instruções centrais (`systemMessage`), tom de voz (`toneOfVoice`) e regras negativas (`negativeInstructions`).
+4. **Skills (`ai_subnode`)**: Borda âmbar (`#f59e0b`). Conectam via porta `ai_tool` (linha tracejada). Recebem **exclusivamente a instrução técnica da habilidade específica**, sem misturar com o prompt geral do agente.
+5. **Conectores MCP**: Borda azul céu (`#0ea5e9`). Conectam via porta `ai_tool`. Executam chamadas de ferramentas externas (ex: Google Slides API).
+6. **Repetidor (`ai.repeater`)**: Formato circular (`border-radius: 50%`, `80x80px`), borda roxa (`#8b5cf6`). Não usa raio. Configura prazos (`deadlineRule`), frequência (`repeatInterval`) e horários (`executionSchedule`).
+7. **Saídas (`output`)**: Borda verde (`#16a34a`). Definem se a entrega é um Relatório Formatado, Dashboard ou Texto Direto.
+
 ---
 
-## 3. Estrutura de Diretórios e Arquivos
+## 4. O Pipeline de Compilação e Banco de Dados (`CompiledAgentRecord`)
+
+Quando o usuário clica em **"Criar Agente"** (ou **"Atualizar Agente"**):
+
+1. **Validação Estrutural (`validateAgentWorkflow`)**:
+   - Garante que exista 1 bloco de IA ativo.
+   - Emite avisos caso não haja entradas ou saídas explícitas.
+2. **Execução de Verificação (`WorkflowExecute.run()`)**:
+   - Executa o grafo do gatilho à saída.
+   - Cada bloco injeta seus parâmetros reais no histórico de execução.
+3. **Compilação de Prompt (`compileAgentFromWorkflow`)**:
+   - Consolida as instruções de todos os blocos em um objeto estruturado:
+   ```typescript
+   export interface CompiledAgentRecord {
+     id: string;
+     name: string;
+     status: 'created' | 'draft';
+     createdAt: string;
+     updatedAt: string;
+     version: number;
+     aiBrain: CompiledAiBrainConfig;
+     inputs: CompiledInputConfig[];
+     skills: CompiledSkillConfig[];
+     mcps: CompiledMcpConfig[];
+     repeater: CompiledRepeaterConfig | null;
+     outputs: CompiledOutputConfig[];
+     compiledSystemPrompt: string;       // Prompt unificado construído a partir dos blocos
+     workflowSnapshot: IWorkflowData;    // Grafo completo dos blocos
+     chatHistory: AgentChatMessageRecord[]; // Mensagens salvas
+     attachedDocuments: AgentAttachedDocument[]; // Arquivos anexados salvos
+   }
+   ```
+4. **Persistência Dupla (Isomórfica)**:
+   - Salvo no `localStorage` sob a chave `ai_agent_studio_compiled_db_v1`.
+   - Sincronizado via `POST /api/agents` no arquivo persistente `server/db/agents.json`.
+
+---
+
+## 5. Decomposição e Lapidação de Prompts ("Montar com IA")
+
+No chat inferior (`BottomAiChatDrawer.tsx`), o usuário pode pedir para a IA montar blocos em linguagem natural (ex: *"monte um agente que lê contratos e gera relatórios de risco"*).
+
+Para evitar que o prompt bruto seja copiado integralmente para dentro de todos os blocos, o sistema conta com a função **`decomposeAndPolishUserPrompt`** (`aiWorkflowGenerator.ts`):
+- **No Bloco de Entrada**: Insere apenas instruções de coleta e leitura documental.
+- **No Bloco de IA**: Lapida um papel executivo (`agentRole`), metodologia em passos e regras de conduta.
+- **No Bloco de Skill**: Extrai e isola **apenas a técnica da skill** (ex: *"Auditoria de Cláusulas & Riscos"*, com exemplo de entrada e saída).
+- **No Bloco de Saída**: Configura a estrutura do relatório final.
+- **Filtro de Intenção**: Se o usuário fizer apenas uma pergunta (ex: *"você está aí?"*, *"olá"*), o assistente responde em texto livre **sem alterar nem bagunçar os blocos do canvas**.
+
+---
+
+## 6. Integração Multimodal com Google Gemini & Upload de Arquivos
+
+### Envio de Documentos (PDF, DOCX, TXT):
+- Na aba **Usar Agente** (`UseAgentChatView.tsx`), o botão **`+`** aciona um input assíncrono.
+- O arquivo é lido via `FileReader.readAsDataURL` de forma não bloqueante e codificado em Base64.
+- Ao clicar no `+`, o arquivo fica visível em um chip acima do campo de texto (sem poluir o chat com mensagens automáticas).
+- Quando o usuário envia a mensagem, o documento e o texto vão juntos na mesma requisição.
+
+### Chamada Multimodal à API do Gemini:
+Em `agentDatabase.ts`, a chamada é enviada com suporte a documentos nativos:
+```typescript
+userParts.push({
+  inlineData: {
+    mimeType: 'application/pdf',
+    data: doc.base64Data, // Gemini faz OCR e leitura visual nativa de todas as páginas
+  },
+});
+```
+
+### Tolerância a Falhas e Failover Rápido:
+- **Failover entre Modelos**: Tenta primeiro `gemini-2.5-flash`. Caso receba erro temporário (ex: 503 Overloaded), chaveia imediatamente para `gemini-3.8-flash`.
+- **Timeout Estrito (14s)**: Usa `AbortController` para abortar requisições penduradas antes que o usuário fique esperando.
+- **Formatação Limpa**: Todas as respostas são higienizadas para **nunca conter tags cruas como `### ✅` ou metadados de máquina**, mantendo um tom executivo e natural.
+
+---
+
+## 7. Estrutura de Diretórios dos Componentes Chave
 
 ```text
 n8n-reconstructed/
-├── index.html                        # Entrypoint HTML (fonte Inter + JetBrains Mono)
-├── package.json                      # Dependências e scripts npm
-├── tsconfig.json                     # Configuração TypeScript estrita
-├── vite.config.ts                    # Configuração Vite (porta 5173 + proxy /api -> 4000)
-├── ARCHITECTURE_AND_LLM_GUIDE.md     # Este guia arquitetural para LLMs e desenvolvedores
 ├── server/
-│   └── index.ts                      # API Express na porta 4000 (GET/POST workflows, POST /api/workflows/:id/run)
-└── src/
-    ├── main.tsx                      # Bootstrap React 18 + importação de n8n-tokens.css
-    ├── App.tsx                       # Orquestrador de Estado Global, Layout Principal e Ações do Grafo
-    ├── styles/
-    │   └── n8n-tokens.css            # Design Tokens (Branco Gelo & Dark), animações e estilos do Minimapa/Handles
-    ├── engine/                       # Núcleo Lógico (Independente de UI)
-    │   ├── types.ts                  # Contratos TypeScript (INode, IConnections, IRunData, IPinData, etc.)
-    │   ├── nodeTypes.ts              # Registro dos 12 tipos de nós nativos, propriedades, portas e cores
-    │   ├── workflow.ts               # Classe Workflow (grafo direcionado, conexões reversas, avaliador ={{...}})
-    │   ├── workflowExecute.ts        # Classe WorkflowExecute (pilha de execução, waitingExecution, sub-nós IA)
-    │   ├── geometry.ts               # Matemática do Canvas (Grid 16px, Bezier, SmoothStep Loops, Auto-Layout)
-    │   └── sampleWorkflows.ts        # Templates de Workflows prontos para teste e demonstração
-    └── components/                   # Camada Visual e Interativa
-        ├── TopNavBar.tsx             # Barra superior (Nome do workflow, seletor de templates, Run, Tema, Export JSON)
-        ├── LeftSidebar.tsx           # Sidebar Esquerda Minimizável (Paleta Drag-and-Drop + Chat Copiloto IA inferior)
-        ├── Canvas.tsx                # Canvas Interativo (Pan/Zoom, Nós, Portas Magnéticas, Arestas SVG, Minimapa)
-        ├── RightNodeSidebar.tsx      # Sidebar Direita Contextual (Parâmetros, Dados I/O e Info ao clicar num nó)
-        ├── NodeDetailsModal.tsx      # Modal NDV de 3 colunas em tela cheia (Input | Parâmetros | Output)
-        ├── NodeCreatorDrawer.tsx     # Drawer contextual para inserção rápida a partir do botão "+" de uma porta/aresta
-        ├── ExecutionLogsDrawer.tsx   # Gaveta inferior retraível com timeline e métricas de execução por nó
-        └── NodeIcon.tsx              # Renderizador de ícones vetoriais por tipo de componente
+│   ├── index.ts                      # API Express (rotas /api/workflows, /api/agents, etc.)
+│   └── db/
+│       └── agents.json               # Banco de dados persistente em arquivo JSON
+├── src/
+│   ├── App.tsx                       # Orquestrador do layout, abas (builder/use-agent) e sincronização do DB
+│   ├── engine/
+│   │   ├── agentDatabase.ts          # Compilador de agentes, persistência de chat/docs e cliente Gemini
+│   │   ├── aiWorkflowGenerator.ts    # Decompositor/lapidador de prompts e gerador semântico de blocos
+│   │   ├── nodeTypes.ts              # Catálogo dos 12 tipos de blocos, cores, categorias e portas
+│   │   ├── workflow.ts               # Estrutura de grafo e expressões ={{...}}
+│   │   ├── workflowExecute.ts        # Executor passo a passo dos blocos
+│   │   └── geometry.ts               # Snapping 16px, Bézier suave e algoritmo de auto-alinhamento (Tidy Up)
+│   └── components/
+│       ├── TopNavBar.tsx             # Nome editável do agente, abas [Montar Blocos] e [Usar Agente], botão Criar Agente
+│       ├── Canvas.tsx                # Canvas interativo (nós, conexões com handles magnéticos, minimapa)
+│       ├── UseAgentChatView.tsx      # Chat estilo ChatGPT com upload (+) de documentos, histórico e barra colada à direita
+│       ├── LeftSidebar.tsx           # Paleta esquerda arrastável + gatilho do assistente IA
+│       ├── RightNodeSidebar.tsx      # Configurações contextuais dos nós (inputs limpos sem abas pesadas)
+│       └── BottomAiChatDrawer.tsx    # Gaveta inferior para montar blocos com IA
 ```
 
 ---
 
-## 4. Arquitetura da Página e Layout das Regiões
+## 8. Guia para Novas IAs / Desenvolvedores (Manutenção Segura)
 
-A interface principal (`App.tsx`) é organizada em uma estrutura **Full-Viewport (`100vw × 100vh`, `overflow: hidden`)** dividida em 4 regiões coordenadas:
-
-```
-+--------------------------------------------------------------------------------------------------+
-| TopNavBar (56px fixo)                                                                            |
-| [Logo] [Nome Editável] [Tag Ativo] [Templates v] | [+ Add Node] [Logs] [JSON] [Tema] [▶ Executar]|
-+------------------------+------------------------------------------------+------------------------+
-| LeftSidebar            | Canvas Central ("Branco Gelo" #f3f7fb)         | RightNodeSidebar       |
-| (310px ou 54px rail)   | (flex: 1, Pan/Zoom infinito, Grid 16px)        | (375px condicional)    |
-|                        |                                                |                        |
-| 1. Biblioteca de       |   [Sticky Notes Layer]                         | Só aparece ao CLICAR   |
-|    Componentes         |   [SVG Edges Layer (Bezier / SmoothStep)]      | em um nó no Canvas!    |
-|    - Busca & Filtros   |   [Edge Labels & Hover Toolbars (+ / Lixeira)] |                        |
-|    - Cards Arrastáveis |   [Interactive Nodes + Magnetic Handles]       | - Header & Status      |
-|      (Drag -> Canvas)  |                                                | - [Executar] [Pin] ... |
-|                        |                                                | - Aba 1: Parâmetros    |
-| ---------------------- | +------------------+                           | - Aba 2: Dados (I/O)   |
-| 2. Assistente IA       | | Minimapa 200x120 |                           | - Aba 3: Info & Fluxo  |
-|    (Chat Integrado)    | +------------------+                           |                        |
-|    - Chips Rápidos     | [Ponteiro|Mão|Mapa|Fit|Zoom+|Zoom-|Reset|Tidy] |                        |
-|    - Histórico & Input |                                                |                        |
-+------------------------+------------------------------------------------+------------------------+
-| ExecutionLogsDrawer (Opcional / Retraível na base - 210px)                                       |
-+--------------------------------------------------------------------------------------------------+
-```
-
----
-
-## 5. Detalhamento dos Módulos e Componentes
-
-### 5.1. Camada de Engine (`src/engine/`)
-
-1. **[`types.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/types.ts)**:
-   - Define os tipos centrais idênticos ao n8n:
-     - `NodeConnectionType`: `'main' | 'ai_languageModel' | 'ai_memory' | 'ai_tool'`
-     - `INode`: `{ id, name, type, typeVersion, position: [x, y], disabled?, notes?, parameters }`
-     - `IConnections`: Dicionário indexado por `sourceNode -> connectionType -> branchIndex -> Array<{ node, type, index }>`
-     - `IRunData`: Histórico de execução por nó (`ITaskData[]` contendo `startTime`, `executionTime`, `executionStatus`, `data` e `error`).
-2. **[`nodeTypes.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/nodeTypes.ts)**:
-   - Catálogo declarativo `NODE_TYPE_DESCRIPTIONS` com 12 componentes divididos em 6 categorias (`trigger`, `core`, `flow`, `ai`, `ai_subnode`, `annotation`):
-     - **Gatilhos (`isTrigger: true`, borda esquerda `36px`)**: `manualTrigger`, `webhook`.
-     - **Ações Core (`96×96px`)**: `httpRequest`, `set` (Edit Fields), `code` (JavaScript sandbox).
-     - **Controle de Fluxo (`96×96px`)**: `if` (2 saídas: `true`/`false`), `switch` (3 saídas: `0`, `1`, `fallback`), `merge` (2 entradas `main`).
-     - **Agente IA Configurável (`isConfigurable: true`, `256×96px`)**: `@n8n/n8n-nodes-langchain.agent` (possui entradas `main` na esquerda e 3 portas losango `ai_*` na borda inferior).
-     - **Sub-Nós de IA (`isConfiguration: true`, circular `80×80px`)**: `lmChatOpenAi`, `memoryBufferWindow`, `toolCalculator` (conectam-se de baixo para cima nas portas losango do AI Agent).
-     - **Anotação (`isSticky: true`)**: `stickyNote` (7 variantes de cor).
-3. **[`workflow.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/workflow.ts)**:
-   - Constrói o mapa `nodes` (por nome) e calcula `connectionsByDestinationNode` via `Workflow.getConnectionsByDestination(connections)`.
-   - Implementa `getStartNode()`, `getChildNodes()`, `getParentNodes()` e o avaliador dinâmico de expressões `evaluateExpression(expr, context)` que resolve `={{$json...}}`, `={{$node["Nome"].json...}}`, `={{$parameter["..."]}}` e `={{$now}}`.
-4. **[`workflowExecute.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/workflowExecute.ts)**:
-   - Reconstrução fiel do `WorkflowExecute.processRunExecutionData`:
-     - Usa `nodeExecutionStack` (LIFO/FIFO) e `waitingExecution` para sincronizar nós com múltiplas entradas (como `Merge`).
-     - Respeita `pinData` (dados fixados substituem a execução real) e `disabled` (nós desativados repassam o payload do primeiro input adiante).
-     - Resolve sub-nós de IA (`ai_languageModel`, `ai_memory`, `ai_tool`) conectados ao `AI Agent` e dispara callbacks `onNodeExecuteBefore` e `onNodeExecuteAfter` para animar o Canvas em tempo real.
-5. **[`geometry.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/geometry.ts)**:
-   - `GRID_SIZE = 16` e `snapToGrid(val, 16)`.
-   - `getNodeDimensions(node)` e `getNodeHandles(node)` (calcula offsets exatos `offsetX, offsetY` para cada porta na esquerda, direita, topo ou base).
-   - `getEdgeRenderData(...)`:
-     - Conexões para frente (`targetX >= sourceX - 16`): Curva de Bézier cúbica suave (`computeBezierPath`).
-     - Conexões para trás / Loops (`targetX < sourceX - 16` em portas `main`): Rota ortogonal `SmoothStep` dividida em 2 segmentos que contorna por baixo dos nós (`centerY = Math.max(sourceY, targetY) + 112`).
-   - `tidyUpWorkflowNodes(nodes, connections)`: Auto-layout topológico em camadas alinhado ao grid de `16px`.
-
----
-
-### 5.2. Camada de Componentes UI (`src/components/`)
-
-1. **[`App.tsx`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/App.tsx)**:
-   - Gerencia o estado mestre: `workflow`, `runData`, `pinData`, `selectedNodeNames`, `rightSidebarNodeName`, `activeDetailsNodeName` e `theme` (inicializado como `'light'` — Branco Gelo).
-   - Coordena todas as mutações imutáveis no grafo (`handleUpdateNodePosition`, `handleUpdateNode`, `handleRenameNode`, `handleConnect`, `handleDeleteConnection`, `handleAddNodeFromCreator`, `handleDropNodeOnCanvas`).
-2. **[`LeftSidebar.tsx`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/components/LeftSidebar.tsx)**:
-   - **Estado Minimizável (`isCollapsed`)**: Alterna entre `310px` (expandido) e `54px` (barra vertical compacta com ícones arrastáveis e atalho do Chat IA).
-   - **Seção Superior (Componentes)**: Busca textual + abas de categoria + cards com `draggable={true}` que definem `e.dataTransfer.setData('application/n8n-node-type', item.name)`.
-   - **Seção Inferior (Assistente IA / Copilot)**: Chat interativo com altura ajustável (`275px` ou `410px`) ou recolhível (`44px`), chips de comando rápido e interpretador de intenções que pode criar nós, executar o workflow, acionar o *Tidy Up* ou focar/explicar nós do fluxo.
-3. **[`Canvas.tsx`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/components/Canvas.tsx)**:
-   - Renderiza o plano infinito com transformação CSS `translate(viewport.x, viewport.y) scale(viewport.zoom)`.
-   - Suporta **Drop de Componentes (`onDragOver` / `onDrop`)** vindos da `LeftSidebar`, convertendo `(clientX, clientY)` para coordenadas do mundo via `screenToCanvas` e alinhando ao grid de `16px`.
-   - **Minimapa Fiel ao `@vue-flow/minimap` (`200×120px`, canto inferior esquerdo)**:
-     - Calcula `boundingRect` como a união dos nós com a janela atual da câmera (`viewBB`).
-     - Renderiza `<path className="n8n-minimap-mask" fillRule="evenodd" />` que escurece a área externa e recorta uma janela transparente sobre `viewBB`.
-     - **Congelamento de `viewBox` durante o arraste (`frozenMinimapView`)**: Ao clicar/arrastar no minimapa, congela a escala para eliminar qualquer loop de realimentação/oscilação. Suporta também zoom via roda do mouse (`handleMinimapWheel`).
-4. **[`RightNodeSidebar.tsx`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/components/RightNodeSidebar.tsx)**:
-   - Painel lateral direito (`375px`) que exibe todas as informações do nó clicado:
-     - **Header**: Ícone, nome editável inline, versão, badge de status (`Executado`, `Pinado`, `Desativado`), botão `Expandir` (abre `NodeDetailsModal`) e botão `Fechar`.
-     - **Barra de Ações Rápidas**: `Executar Nó`, `Pin Data`, `Ativar/Desativar`, `Duplicar` e `Excluir`.
-     - **3 Abas**: `Parâmetros` (edição ao vivo + preview de expressões `={{...}}` + notas), `Dados (I/O)` (JSON de Output e Input) e `Info & Conexões` (ID, tipo, posição X/Y e navegação entre nós pais/filhos).
-
----
-
-## 6. Invariantes Críticas de UX (Regras para Futuras LLMs)
-
-> **ATENÇÃO (NÃO QUEBRE ESTES COMPORTAMENTOS EM EDIÇÕES FUTURAS)**:
-
-1. **A Sidebar Direita (`RightNodeSidebar`) SÓ deve abrir ao CLICAR em um nó (nunca ao arrastar)**:
-   - Em `Canvas.tsx`, o evento `handleNodeMouseDown` **não** deve abrir a sidebar direita.
-   - A abertura ocorre exclusivamente dentro de `stopAllInteractions` (no `mouseup`), verificando `if (finished.type === 'node' && !finished.isDragging && finished.nodeName) { onOpenNodeDetails(finished.nodeName); }`.
-   - Da mesma forma, arrastar e soltar um componente da `LeftSidebar` no Canvas (`handleDropNodeOnCanvas`) apenas adiciona e seleciona visualmente o nó, sem abrir a `RightNodeSidebar`.
-2. **Prevenção de "Mouse Preso" no Canvas (`DRAG_THRESHOLD_PX = 5` + Listeners Globais)**:
-   - O arraste de pan do mapa ou movimentação de nó só inicia após o cursor mover pelo menos `5px` (`Math.hypot(rawDx, rawDy) >= DRAG_THRESHOLD_PX`).
-   - Os listeners de `mousemove`, `mouseup` e `blur` estão registrados em `window` e possuem guarda `if (e.buttons === 0)` no início do `mousemove` para liberar imediatamente qualquer estado caso o mouse saia da janela.
-3. **Geometria e Snap Magnético da "Bolinha" de Conexão (`handles`)**:
-   - Cada porta (handle) possui um container de captura de `28×28px` centralizado em `(h.offsetX, h.offsetY)` com `transform: translate(-50%, -50%)`.
-   - O botão `+` de portas desconectadas fica em `position: absolute; left: 50%; marginLeft: 7px` para **nunca** deslocar a bolinha do centro da borda do nó.
-   - Durante o arraste de uma conexão (`connecting`), `handleWindowMouseMove` busca automaticamente qualquer porta compatível a até `48px` do cursor **ou** qualquer componente compatível cujo corpo esteja sob o cursor (`isCursorOverNodeBody`), gravando em `connecting.snappedTarget`. Ao soltar o mouse (`mouseup`), a conexão é efetivada automaticamente com `snappedTarget`.
-4. **Minimapa sem Oscilação (`frozenMinimapView`)**:
-   - Nunca recalcule o `viewBox` ativo do minimapa usando `viewport.x / viewport.y` enquanto o próprio usuário estiver arrastando dentro do minimapa. Mantenha o uso de `frozenMinimapView` durante o `mousedown -> mousemove` do minimapa e limpe-o apenas no `mouseup`.
-
----
-
-## 7. Sistema de Formatos Visuais (`NodeShapeVariant`), Protótipo IA (Gateway + Skills + MCP) e Integração LLM
-
-### 7.1. Formatos e Cores Distintas por Tipo de Bloco (Mantendo as Conexões do n8n)
-Para tornar a construção visual intuitiva para **usuários não-técnicos** sem perder a engenharia de linhas e portas do n8n (`main` esquerda/direita + portas losango `ai_languageModel`, `ai_memory`, `ai_tool` com linhas tracejadas `8,8` e snap magnético), cada bloco possui um `shapeVariant`, `badgeLabel` e `color` próprios em [`src/engine/types.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/types.ts), [`src/engine/geometry.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/geometry.ts) e [`src/styles/n8n-tokens.css`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/styles/n8n-tokens.css):
-
-| Bloco / Categoria | Tipo (`type`) | `shapeVariant` | Dimensões | Formato & Cor de Destaque | Porta de Conexão n8n |
-| :--- | :--- | :--- | :--- | :--- | :--- |
-| **Pedido / Entrada** | `ai.promptInput` | `prompt-pill` | `208 × 80 px` | Pílula assimétrica esquerda (`40px 14px 14px 40px`), **Violeta (`#6366f1`)**, badge `PEDIDO` | Saída `main` (direita) |
-| **AI Agent (Cérebro)** | `@n8n/n8n-nodes-langchain.agent` | `agent-card` | `256 × 96 px` | Card largo (`16px` radius), **Coral (`#ff6d5a`)**, badge `AGENTE IA` | Entrada/Saída `main` + 3 portas losango na base (`Chat Model`, `Memory`, `Skill / MCP`) |
-| **Gateway de Modelos** | `ai.modelGateway` | `gateway-capsule` | `176 × 72 px` | Cápsula completa (`999px` radius), **Verde Esmeralda (`#10b981`)**, badge `GATEWAY LLM` | Saída losango no topo (`ai_languageModel`) |
-| **Skill Especializada** | `ai.skillSlideTranscriber` | `skill-hexagon` | `176 × 76 px` | Cantos chanfrados diagonais (`22px 6px 22px 6px`), **Âmbar (`#f59e0b`)**, badge `SKILL` | Saída losango no topo (`ai_tool`) |
-| **Conector MCP** | `ai.mcpGoogleSlides` | `mcp-shield` | `176 × 76 px` | Escudo invertido (`6px 22px 6px 22px`), **Azul Céu (`#0ea5e9`)**, badge `MCP SERVER` | Saída losango no topo (`ai_tool`) |
-| **Entrega / Resposta** | `ai.responseOutput` | `output-card` | `208 × 80 px` | Pílula assimétrica direita (`14px 40px 40px 14px`), **Verde (`#16a34a`)**, badge `ENTREGA` | Entrada/Saída `main` |
-
----
-
-### 7.2. Como Funciona a Montagem Automática via LLM (`aiWorkflowGenerator.ts`)
-O módulo [`src/engine/aiWorkflowGenerator.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/aiWorkflowGenerator.ts) + endpoint `POST /api/ai/generate-workflow` em [`server/index.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/server/index.ts) permitem que o usuário peça no chat inferior da `LeftSidebar`:
-- *"Monte um agente para transcrever slides do Google Slides usando o Gemini"*
-- *"Troque o modelo do gateway para Claude 3.7 Sonnet"*
-
-Fluxo de execução:
-1. **Envio para LLM Real (Opcional / Plug-and-Play)**:
-   - Se o usuário colar uma `GEMINI_API_KEY` no botão **🔑 Chave** no cabeçalho do chat (ou definir `GEMINI_API_KEY` no ambiente do servidor Express), `generateWorkflowFromPrompt` envia `LLM_WORKFLOW_SYSTEM_PROMPT` com `responseMimeType: "application/json"` para `gemini-2.5-flash`.
-2. **Construtor Semântico Local Instantâneo (`buildSemanticWorkflowFromPrompt`)**:
-   - Caso nenhuma chave de API esteja configurada, o construtor semântico local monta ou atualiza instantaneamente os blocos (`ai.promptInput` → `AI Agent` + `ai.modelGateway` + `ai.skillSlideTranscriber` + `ai.mcpGoogleSlides` → `ai.responseOutput`), cria todas as conexões `main`, `ai_languageModel` e `ai_tool`, e aplica `tidyUpWorkflowNodes` para alinhar tudo sem sobreposição no grid de `16px`.
-
----
-
-## 8. Guia Rápido de Extensão para Futuras Tarefas
-
-- **Como adicionar uma nova Skill ou novo MCP no futuro**:
-  1. Abra [`src/engine/nodeTypes.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/nodeTypes.ts) e adicione um novo bloco com `category: 'ai_subnode'`, `isConfiguration: true`, `isInlineCard: true`, `shapeVariant: 'skill-hexagon'` (para Skills) ou `'mcp-shield'` (para MCPs), e `outputs: [{ type: 'ai_tool', displayName: 'MCP' }]`.
-  2. Para conectar a execução real de um servidor MCP ou API de LLM durante o clique em *Execute Workflow*, adicione a chamada assíncrona correspondente em `executeSupplementalSubNodes` ou no `case '@n8n/n8n-nodes-langchain.agent'` dentro de [`src/engine/workflowExecute.ts`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/engine/workflowExecute.ts).
-- **Como alterar Cores ou Tema**:
-  1. Edite as variáveis CSS e as classes `.shape-*` em [`src/styles/n8n-tokens.css`](file:///c:/Users/Kayke/OneDrive/Área%20de%20Trabalho/Reverse_engeener/n8n-reconstructed/src/styles/n8n-tokens.css) (bloco `:root` para o tema Branco Gelo padrão e `body[data-theme='dark']` para o tema escuro).
-
-
+Se você for adicionar novas funcionalidades ou alterar o código:
+1. **Preserve a regra de 1 LLM por Agente**: Não remova a trava sem antes atualizar o compilador `agentDatabase.ts` para lidar com múltiplos cérebros em paralelo.
+2. **Sempre use `FileReader` assíncrono para uploads**: Nunca processe buffers binários grandes com loops `for` síncronos na thread do React.
+3. **Mantenha os Handlers de nós sincronizados**: Ao criar um novo tipo de bloco em `nodeTypes.ts`, implemente o case correspondente em `workflowExecute.ts` e adicione o extrator em `compileAgentFromWorkflow`.
+4. **Verificação de Build Obrigatória**: Após qualquer alteração, execute sempre:
+   ```bash
+   npm run build
+   ```
+   O comando roda `tsc --noEmit && vite build` garantindo zero regressões de tipagem.

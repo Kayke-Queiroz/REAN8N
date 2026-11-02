@@ -12,6 +12,7 @@ import {
   X,
 } from 'lucide-react';
 import { generateWorkflowFromPrompt } from '../engine/aiWorkflowGenerator';
+import { DEFAULT_GEMINI_API_KEY } from '../engine/agentDatabase';
 import { IWorkflowData } from '../engine/types';
 
 export interface ChatMessage {
@@ -48,7 +49,7 @@ export const BottomAiChatDrawer: React.FC<BottomAiChatDrawerProps> = ({
   const [chatInput, setChatInput] = useState('');
   const [showKeyConfig, setShowKeyConfig] = useState(false);
   const [geminiApiKey, setGeminiApiKey] = useState<string>(
-    () => localStorage.getItem('n8n_rea_gemini_key') || '',
+    () => localStorage.getItem('n8n_rea_gemini_key') || DEFAULT_GEMINI_API_KEY,
   );
   const [isGenerating, setIsGenerating] = useState(false);
   const messagesEndRef = useRef<HTMLDivElement>(null);
@@ -104,16 +105,49 @@ export const BottomAiChatDrawer: React.FC<BottomAiChatDrawerProps> = ({
       return;
     }
 
-    if (lower.includes('organizar') || lower.includes('arrumar') || lower.includes('alinhar')) {
-      onTidyUp();
+    // Detect conversational / questioning prompts that are NOT requests to build a workflow
+    const isBuildRequest =
+      lower.startsWith('monte') ||
+      lower.startsWith('crie') ||
+      lower.startsWith('gere') ||
+      lower.startsWith('adiciona') ||
+      lower.startsWith('coloque') ||
+      lower.startsWith('troque') ||
+      lower.startsWith('mude') ||
+      lower.includes('monte um agente') ||
+      lower.includes('crie um agente') ||
+      lower.includes('quero um agente') ||
+      lower.includes('monte os blocos') ||
+      lower.includes('adicione o bloco') ||
+      lower.includes('coloque o bloco') ||
+      lower.includes('adicionar bloco');
+
+    const isQuestionOrGreeting =
+      lower.includes('?') ||
+      lower.includes('olá') ||
+      lower.includes('ola') ||
+      lower.includes('oi') ||
+      lower.includes('tudo bem') ||
+      lower.includes('responde') ||
+      lower.includes('respondendo') ||
+      lower.includes('esta ai') ||
+      lower.includes('está aí') ||
+      lower.includes('quem é você') ||
+      lower.includes('quem e voce') ||
+      lower.includes('o que você faz') ||
+      lower.includes('o que voce faz') ||
+      lower.includes('como funciona') ||
+      lower.includes('ajuda');
+
+    if (!isBuildRequest && isQuestionOrGreeting) {
       setMessages((prev) => [
         ...prev,
         {
           id: `ai-${Date.now() + 1}`,
           role: 'assistant',
-          text: 'Alinhei todos os blocos no grid perfeitamente!',
+          text: `Sim, estou aqui e pronta! 👋\n\nEu sou o **Assistente Construtor**. Só monto ou altero blocos no canvas quando você me pedir diretamente algo como:\n- *"Monte um agente que lê documentos e faz relatórios"*\n- *"Adicione o bloco Repetidor para rodar todo dia"*\n- *"Troque a saída para Dashboard visual"*\n\nComo posso ajudar a montar seu fluxo agora?`,
           timestamp: now,
-          actionBadge: 'Auto-Layout Aplicado',
+          actionBadge: 'Resposta Direta',
         },
       ]);
       scrollToBottom();

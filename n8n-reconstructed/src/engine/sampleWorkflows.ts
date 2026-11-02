@@ -3,7 +3,7 @@ import { IWorkflowData } from './types';
 export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
   {
     id: 'wf-slide-transcriber-prototype',
-    name: '1. Agente Inteligente: Transcrever Slides (Entrada + IA + Google Slides + Entrega)',
+    name: 'Agente Transcritor de Slides',
     active: true,
     settings: {
       executionOrder: 'v1',
@@ -14,11 +14,11 @@ export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
       {
         id: 'node-prompt-input',
         name: 'Entrada de Dados',
-        type: 'ai.promptInput',
+        type: 'ai.inputPdf',
         typeVersion: 1,
         position: [160, 240],
         parameters: {
-          inputType: 'Documento PDF',
+          documentFormat: 'Apresentação / Slides (.pptx)',
           sourceTitle: 'Apresentação Comercial Q4',
           userPrompt:
             'Acesse a apresentação no Google Slides, transcreva todos os slides em tópicos e destaque os pontos de ação.',
@@ -36,6 +36,9 @@ export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
           agentRole: 'Especialista em Análise & Síntese',
           systemMessage:
             'Você recebe o documento, utiliza o conector Google Slides MCP para ler os dados e aplica a Skill de Transcrição para entregar um resumo claro.',
+          toneOfVoice: 'Executivo e Direto',
+          negativeInstructions:
+            'Não invente métricas ou dados que não estejam nos slides.',
           text: '={{$json.userPrompt}}',
         },
       },
@@ -46,6 +49,7 @@ export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
         typeVersion: 1,
         position: [384, 432],
         parameters: {
+          summaryStyle: 'Resumo Executivo em Tópicos',
           outputFormat: 'Resumo Executivo',
           includeSpeakerNotes: true,
         },
@@ -58,18 +62,21 @@ export const SAMPLE_WORKFLOWS: IWorkflowData[] = [
         position: [608, 432],
         parameters: {
           action: 'read_presentation',
+          presentationId:
+            'https://docs.google.com/presentation/d/1A2B3C-SlideDeck-Q4',
           mcpServerUri: 'mcp://google-workspace/slides',
         },
       },
       {
         id: 'node-response-out',
         name: 'Saída / Entrega',
-        type: 'ai.responseOutput',
+        type: 'ai.outputReport',
         typeVersion: 1,
         position: [864, 240],
         parameters: {
-          outputType: 'Relatório Formatado',
+          outputType: 'Relatório Formatado em Markdown',
           documentTitle: 'Síntese Executiva: Apresentação Q4',
+          includeTimestamp: true,
         },
       },
     ],

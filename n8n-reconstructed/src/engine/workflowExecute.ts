@@ -358,20 +358,31 @@ export class WorkflowExecute {
     const firstJson = inputItems[0]?.json ?? {};
 
     switch (node.type) {
+      case 'ai.inputPdf':
+      case 'ai.inputDocs':
+      case 'ai.inputSheets':
+      case 'ai.inputText':
       case 'ai.promptInput': {
         return [
           [
             {
               json: {
-                requestTitle:
-                  node.parameters.requestTitle || 'Transcrever Slides',
+                inputNodeName: node.name,
+                inputNodeType: node.type,
+                documentFormat:
+                  node.parameters.documentFormat || 'Documento Geral',
+                sourceTitle:
+                  node.parameters.sourceTitle ||
+                  node.parameters.requestTitle ||
+                  node.name,
+                fileUrl:
+                  node.parameters.fileUrl ||
+                  node.parameters.presentationId ||
+                  '',
                 userPrompt:
                   node.parameters.userPrompt ||
-                  'Transcreva os slides da apresentação e gere tópicos executivos.',
-                presentationId:
-                  node.parameters.presentationId ||
-                  'https://docs.google.com/presentation/d/1A2B3C-SlideDeck-Q4',
-                language: node.parameters.language || 'pt-BR',
+                  'Analise os dados desta fonte conforme as instruções da IA.',
+                notes: node.notes || '',
                 submittedAt: new Date().toISOString(),
               },
               pairedItem: { item: 0 },
@@ -380,11 +391,37 @@ export class WorkflowExecute {
         ];
       }
 
+      case 'ai.repeater': {
+        return [
+          [
+            {
+              json: {
+                repeaterNodeName: node.name,
+                repeatInterval:
+                  node.parameters.repeatInterval || 'Diariamente (Todo dia)',
+                executionSchedule:
+                  node.parameters.executionSchedule || '09:00',
+                deadlineRule: node.parameters.deadlineRule || '',
+                maxExecutions: Number(node.parameters.maxExecutions || 10),
+                cycleInstructions:
+                  node.parameters.cycleInstructions ||
+                  'Verificar atualizações e executar ciclo do agente.',
+                triggeredAt: new Date().toISOString(),
+              },
+              pairedItem: { item: 0 },
+            },
+          ],
+        ];
+      }
+
+      case 'ai.outputReport':
+      case 'ai.outputDashboard':
+      case 'ai.outputText':
       case 'ai.responseOutput': {
         return [
           inputItems.map((item, idx) => {
             const resolvedTitle = workflow.evaluateExpression(
-              node.parameters.documentTitle,
+              node.parameters.documentTitle || node.name,
               {
                 currentNode: node,
                 itemJson: item.json,
@@ -395,12 +432,20 @@ export class WorkflowExecute {
             return {
               json: {
                 status: 'entregue',
-                channel: node.parameters.channel || 'Documento & Chat',
+                outputNodeName: node.name,
+                outputNodeType: node.type,
+                outputType:
+                  node.parameters.outputType ||
+                  node.parameters.channel ||
+                  'Relatório Formatado em Markdown',
                 documentTitle: resolvedTitle,
+                includeTimestamp: Boolean(
+                  node.parameters.includeTimestamp ?? true,
+                ),
                 finalResponse:
                   item.json.output ||
                   item.json.transcribedMarkdown ||
-                  'Transcrição concluída com sucesso.',
+                  'Agente compilado e pronto para uso.',
                 ...item.json,
                 deliveredAt: new Date().toISOString(),
               },
@@ -690,19 +735,46 @@ export class WorkflowExecute {
           node,
           firstJson,
         );
-        const promptText = workflow.evaluateExpression(node.parameters.text, {
-          currentNode: node,
-          itemJson: firstJson,
-          runData: this.runExecutionData.resultData.runData,
-        });
+        const agentRole = String(
+          node.parameters.agentRole || 'Especialista em Análise & Síntese',
+        );
+        const systemMessage = String(
+          node.parameters.systemMessage ||
+            'Analisar dados das entradas e ferramentas conectadas.',
+        );
+        const toneOfVoice = String(
+          node.parameters.toneOfVoice || 'Executivo e Direto',
+        );
+        const negativeInstructions = String(
+          node.parameters.negativeInstructions ||
+            'Não inventar dados fora do contexto.',
+        );
+        const promptText = workflow.evaluateExpression(
+          node.parameters.text ||
+            firstJson.userPrompt ||
+            node.parameters.systemMessage ||
+            '',
+          {
+            currentNode: node,
+            itemJson: firstJson,
+            runData: this.runExecutionData.resultData.runData,
+          },
+        );
         const modelInfo =
           subNodes.ai_languageModel?.[0]?.model ?? 'google/gemini-2.5-flash';
         const memoryInfo = subNodes.ai_memory?.[0]
           ? `WindowBuffer(k=${subNodes.ai_memory[0].contextWindowLength})`
           : 'stateless';
         const toolsUsed = (subNodes.ai_tool ?? []).map(
-          (t) => t.subNodeName || t.subNodeType,
+          (t) => t.skillName || t.subNodeName || t.subNodeType,
         );
+        const customSkills = (subNodes.ai_tool ?? [])
+          .filter((t) => t.subNodeType === 'ai.customSkill')
+          .map((t) => ({
+            skillName: t.skillName || t.subNodeName,
+            skillInstructions: t.skillInstructions,
+            skillNegativeRules: t.skillNegativeRules,
+          }));
         const hasSlidesTool = (subNodes.ai_tool ?? []).some(
           (t) =>
             String(t.subNodeType).includes('Slides') ||
@@ -710,31 +782,22 @@ export class WorkflowExecute {
             String(t.subNodeName).toLowerCase().includes('slide'),
         );
 
-        // Extract numbers in prompt for Calculator tool demo
-        const nums = String(promptText).match(/\d+(\.\d+)?/g)?.map(Number) ?? [];
-        const calcResult =
-          nums.length >= 2
-            ? nums.reduce((acc, n) => acc * n, 1)
-            : (Number(firstJson.score || 10) * 12);
-
         return [
           inputItems.map((item, idx) => ({
             json: {
               ...item.json,
               output: hasSlidesTool
-                ? `Transcrição concluída via ${modelInfo} usando [${toolsUsed.join(', ')}]:\n1. Slide 1 (Visão Geral): Alinhamento de metas Q4 e crescimento de 34%.\n2. Slide 2 (Arquitetura): Agentes conectados via Gateway LLM + Google Slides MCP.\n3. Slide 3 (Próximos Passos): Automatizar relatórios semanais para a equipe.`
-                : `Análise concluída pelo AI Agent (${modelInfo}): O usuário ${item.json.name || 'Cliente'} no plano '${item.json.plan || 'pro'}' possui projeção calculada de $${calcResult.toLocaleString('pt-BR')}.`,
-              transcribedSlides: hasSlidesTool
-                ? [
-                    { slide: 1, title: 'Visão Geral Q4', summary: 'Crescimento de 34% em produtividade com Agentes IA.' },
-                    { slide: 2, title: 'Arquitetura MCP & Skills', summary: 'Conexão direta ao Google Slides sem código.' },
-                    { slide: 3, title: 'Plano de Ação', summary: 'Compartilhar resumo executivo automaticamente.' },
-                  ]
-                : undefined,
+                ? `Agente "${agentRole}" (${modelInfo}) compilado com [${toolsUsed.join(', ')}]:\n1. Diretriz da IA: ${systemMessage}\n2. Tom de Voz: ${toneOfVoice}\n3. Ferramentas prontas para uso na aba "Usar Agente".`
+                : `Agente "${agentRole}" (${modelInfo}) configurado e validado com sucesso.\n- Instruções: ${systemMessage}\n- Estilo: ${toneOfVoice}\n- Skills conectadas: ${toolsUsed.join(', ') || 'Raciocínio Direto'}`,
               agentMetadata: {
                 model: modelInfo,
                 memory: memoryInfo,
+                agentRole,
+                systemMessage,
+                toneOfVoice,
+                negativeInstructions,
                 toolsInvoked: toolsUsed,
+                customSkills,
                 promptEvaluated: promptText,
               },
             },
