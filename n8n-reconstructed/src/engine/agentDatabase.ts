@@ -2,7 +2,10 @@ import { IRunData, IWorkflowData } from './types';
 import { getNodeTypeDescription } from './nodeTypes';
 
 export const DEFAULT_GEMINI_API_KEY =
-  'AIzaSyBM3UJ6ysnEb7abZxIcs3wKm966fEQOw-0';
+  (typeof process !== 'undefined' && process.env?.GEMINI_API_KEY) ||
+  (typeof import.meta !== 'undefined' &&
+    (import.meta as any).env?.VITE_GEMINI_API_KEY) ||
+  '';
 
 export const COMPILED_DB_STORAGE_KEY = 'ai_agent_studio_compiled_db_v1';
 
